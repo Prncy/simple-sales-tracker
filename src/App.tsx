@@ -4,7 +4,7 @@ import {
   CircleHelp, ClipboardList, Download, FileText, LayoutDashboard, Menu, Package,
   Plus, Search, Settings2, ShoppingBag, TrendingUp, X, Check, CalendarDays,
 } from "lucide-react";
-import { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType } from "docx";
+import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
 import { saveAs } from "file-saver";
 
 type Product = { id: string; name: string; unit: string; price: number; category: string };
@@ -145,7 +145,7 @@ function App() {
 
   async function exportDocx() {
     const rows = [
-      new TableRow({ children: ["Date", "Product", "Employee", "Units", "Unit price", "Total"].map((text) => new TableCell({ children: [new Paragraph({ text, bold: true })] })) }),
+      new TableRow({ children: ["Date", "Product", "Employee", "Units", "Unit price", "Total"].map((text) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text, bold: true })] })] })) }),
       ...thisMonthSales.map((s) => new TableRow({ children: [s.soldAt, s.productName, s.employee, String(s.quantity), money(s.unitPrice), money(s.quantity * s.unitPrice)].map((text) => new TableCell({ children: [new Paragraph(text)] })) })),
     ];
     const doc = new Document({ sections: [{ children: [
@@ -157,8 +157,8 @@ function App() {
       new Paragraph(" "),
       new Paragraph({ text: "Product summary", heading: "Heading2" }),
       ...reportProducts.map((p) => new Paragraph(`${p.name}: ${p.units} ${p.unit}(s) — ${money(p.value)}`)),
-      new Paragraph({ text: `Total units sold: ${monthUnits}`, bold: true }),
-      new Paragraph({ text: `Total sales value: ${money(monthValue)}`, bold: true }),
+      new Paragraph({ children: [new TextRun({ text: `Total units sold: ${monthUnits}`, bold: true })] }),
+      new Paragraph({ children: [new TextRun({ text: `Total sales value: ${money(monthValue)}`, bold: true })] }),
       new Paragraph("Returns are tracked separately and are not deducted from sales totals."),
     ] }] });
     const blob = await Packer.toBlob(doc);
