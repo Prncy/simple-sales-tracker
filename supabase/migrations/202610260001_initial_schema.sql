@@ -30,7 +30,8 @@ create table if not exists public.products (
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (business_id, name)
+  unique (business_id, name),
+  unique (id, business_id)
 );
 
 create table if not exists public.sales (
