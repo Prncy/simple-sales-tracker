@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import "./auth.css";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import { BarChart3, LogOut, Package, Plus, ShoppingBag, ArrowDownLeft, FileText, LayoutDashboard, Download } from "lucide-react";
