@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowDownLeft, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronDown,
   CircleHelp, ClipboardList, Download, FileText, LayoutDashboard, Menu, Package,
@@ -76,7 +76,7 @@ function App() {
     window.setTimeout(() => setNotice(""), 3200);
   }
 
-  function handleSaleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  function handleSaleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const product = products.find((p) => p.id === saleProduct);
     const quantity = Number(saleQty);
@@ -266,7 +266,7 @@ function App() {
   );
 }
 
-function StatCard({ label, value, icon, tone, detail }: { label: string; value: string; icon: React.ReactNode; tone: string; detail: string }) {
+function StatCard({ label, value, icon, tone, detail }: { label: string; value: string; icon: ReactNode; tone: string; detail: string }) {
   return <div className="stat-card"><div className="stat-top"><span>{label}</span><div className={`stat-icon ${tone}`}>{icon}</div></div><strong className="stat-value">{value}</strong><div className="stat-detail">{detail}</div></div>;
 }
 function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
