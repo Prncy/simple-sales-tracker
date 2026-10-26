@@ -1,283 +1,122 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import {
-  ArrowDownLeft, ArrowDownRight, ArrowUpRight, BarChart3, Bell, ChevronDown,
-  CircleHelp, ClipboardList, Download, FileText, LayoutDashboard, Menu, Package,
-  Plus, Search, Settings2, ShoppingBag, TrendingUp, X, Check, CalendarDays,
-} from "lucide-react";
-import { Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from "docx";
-import { saveAs } from "file-saver";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase, isSupabaseConfigured } from "./lib/supabase";
+import { BarChart3, LogOut, Package, Plus, ShoppingBag, ArrowDownLeft, FileText, LayoutDashboard, Download } from "lucide-react";
 
-type Product = { id: string; name: string; unit: string; price: number; category: string };
-type Sale = { id: string; productId: string; productName: string; quantity: number; unitPrice: number; soldAt: string; employee: string };
-type ReturnRecord = { id: string; productName: string; quantity: number; returnedAt: string; reason: string };
-type Page = "Overview" | "Sales" | "Products" | "Returns" | "Reports";
+type Product = { id:string; name:string; category:string; unit:string; price:number };
+type Sale = { id:string; productId:string; productName:string; quantity:number; unitPrice:number; soldAt:string; employee:string };
+type ReturnRecord = { id:string; productId:string; productName:string; quantity:number; returnedAt:string; reason:string };
+type Business = { id:string; name:string; currency_code:string };
+type Page = "Overview"|"Sales"|"Products"|"Returns"|"Reports";
+const today = new Date().toISOString().slice(0,10);
+const money=(n:number,currency="ZMW")=>new Intl.NumberFormat("en-ZM",{style:"currency",currency,maximumFractionDigits:2}).format(n);
+const dateLabel=(v:string)=>new Date(v+"T12:00:00").toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
 
-const initialProducts: Product[] = [
-  { id: "p1", name: "Milk — 500ml", unit: "bottle", price: 12, category: "Dairy" },
-  { id: "p2", name: "White Bread", unit: "loaf", price: 18, category: "Bakery" },
-  { id: "p3", name: "Mineral Water", unit: "bottle", price: 8, category: "Drinks" },
-  { id: "p4", name: "Cooking Oil — 2L", unit: "bottle", price: 65, category: "Groceries" },
-];
-const today = new Date().toISOString().slice(0, 10);
-const initialSales: Sale[] = [
-  { id: "s1", productId: "p1", productName: "Milk — 500ml", quantity: 24, unitPrice: 12, soldAt: today, employee: "Chanda M." },
-  { id: "s2", productId: "p2", productName: "White Bread", quantity: 12, unitPrice: 18, soldAt: today, employee: "Chanda M." },
-  { id: "s3", productId: "p3", productName: "Mineral Water", quantity: 36, unitPrice: 8, soldAt: today, employee: "Chanda M." },
-  { id: "s4", productId: "p1", productName: "Milk — 500ml", quantity: 18, unitPrice: 12, soldAt: today, employee: "Chanda M." },
-];
-const initialReturns: ReturnRecord[] = [
-  { id: "r1", productName: "White Bread", quantity: 2, returnedAt: today, reason: "Customer return" },
-];
-
-const money = (value: number) => new Intl.NumberFormat("en-ZM", { style: "currency", currency: "ZMW", maximumFractionDigits: 2 }).format(value);
-const dateLabel = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-
-function App() {
-  const [page, setPage] = useState<Page>("Overview");
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [sales, setSales] = useState<Sale[]>(initialSales);
-  const [returns, setReturns] = useState<ReturnRecord[]>(initialReturns);
-  const [search, setSearch] = useState("");
-  const [showSaleForm, setShowSaleForm] = useState(false);
-  const [showProductForm, setShowProductForm] = useState(false);
-  const [showReturnForm, setShowReturnForm] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [reportMonth, setReportMonth] = useState(today.slice(0, 7));
-  const [saleProduct, setSaleProduct] = useState(initialProducts[0].id);
-  const [saleQty, setSaleQty] = useState("1");
-  const [salePrice, setSalePrice] = useState(String(initialProducts[0].price));
-  const [saleDate, setSaleDate] = useState(today);
-  const [saleEmployee, setSaleEmployee] = useState("Chanda M.");
-  const [newName, setNewName] = useState("");
-  const [newUnit, setNewUnit] = useState("unit");
-  const [newPrice, setNewPrice] = useState("");
-  const [newCategory, setNewCategory] = useState("General");
-  const [returnProduct, setReturnProduct] = useState(initialProducts[0].id);
-  const [returnQty, setReturnQty] = useState("1");
-  const [returnDate, setReturnDate] = useState(today);
-  const [returnReason, setReturnReason] = useState("");
-
-  const thisMonthSales = useMemo(() => sales.filter((s) => s.soldAt.slice(0, 7) === reportMonth), [sales, reportMonth]);
-  const monthValue = thisMonthSales.reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0);
-  const monthUnits = thisMonthSales.reduce((sum, sale) => sum + sale.quantity, 0);
-  const todaySales = sales.filter((s) => s.soldAt === today);
-  const todayValue = todaySales.reduce((sum, sale) => sum + sale.quantity * sale.unitPrice, 0);
-  const filteredSales = sales.filter((s) => (s.productName + s.employee + s.soldAt).toLowerCase().includes(search.toLowerCase()));
-  const filteredProducts = products.filter((p) => (p.name + p.category).toLowerCase().includes(search.toLowerCase()));
-  const reportProducts = products.map((p) => ({
-    ...p,
-    units: thisMonthSales.filter((s) => s.productId === p.id).reduce((sum, s) => sum + s.quantity, 0),
-    value: thisMonthSales.filter((s) => s.productId === p.id).reduce((sum, s) => sum + s.quantity * s.unitPrice, 0),
-  })).filter((p) => p.units > 0 || p.value > 0);
-
-  function notify(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(""), 3200);
-  }
-
-  function handleSaleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const product = products.find((p) => p.id === saleProduct);
-    const quantity = Number(saleQty);
-    const unitPrice = Number(salePrice);
-    if (!product || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !saleEmployee.trim()) {
-      notify("Check the sale details and try again.");
-      return;
-    }
-    setSales((current) => [{ id: crypto.randomUUID(), productId: product.id, productName: product.name, quantity, unitPrice, soldAt: saleDate, employee: saleEmployee.trim() }, ...current]);
-    setShowSaleForm(false);
-    setSaleQty("1");
-    notify("Sale recorded in this prototype.");
-  }
-
-  function handleProductSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!newName.trim() || !newUnit.trim() || Number(newPrice) < 0 || newPrice === "") {
-      notify("Add a product name, unit and valid price.");
-      return;
-    }
-    const product = { id: crypto.randomUUID(), name: newName.trim(), unit: newUnit.trim(), price: Number(newPrice), category: newCategory.trim() || "General" };
-    setProducts((current) => [...current, product]);
-    setSaleProduct(product.id);
-    setSalePrice(String(product.price));
-    setReturnProduct(product.id);
-    setShowProductForm(false);
-    setNewName("");
-    setNewPrice("");
-    notify("Product added in this prototype.");
-  }
-
-  function handleReturnSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const product = products.find((p) => p.id === returnProduct);
-    const quantity = Number(returnQty);
-    if (!product || !Number.isFinite(quantity) || quantity <= 0) {
-      notify("Choose a product and enter a valid quantity.");
-      return;
-    }
-    setReturns((current) => [{ id: crypto.randomUUID(), productName: product.name, quantity, returnedAt: returnDate, reason: returnReason.trim() || "Not specified" }, ...current]);
-    setShowReturnForm(false);
-    setReturnQty("1");
-    setReturnReason("");
-    notify("Return recorded separately from sales.");
-  }
-
-  function reportText() {
-    const label = new Date(reportMonth + "-15T12:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
-    const lines = [
-      "STOCK & SALES TRACKER — MONTHLY SALES REPORT",
-      "Business: My Business",
-      "Period: " + label,
-      "",
-      "DATE | PRODUCT | EMPLOYEE | UNITS | UNIT PRICE | TOTAL",
-      ...thisMonthSales.slice().sort((a, b) => a.soldAt.localeCompare(b.soldAt)).map((s) => `${s.soldAt} | ${s.productName} | ${s.employee} | ${s.quantity} | ${money(s.unitPrice)} | ${money(s.quantity * s.unitPrice)}`),
-      "",
-      "PRODUCT SUMMARY",
-      ...reportProducts.map((p) => `${p.name}: ${p.units} ${p.unit}(s) sold — ${money(p.value)}`),
-      "",
-      `TOTAL UNITS SOLD: ${monthUnits}`,
-      `TOTAL SALES VALUE: ${money(monthValue)}`,
-      "Returns are tracked separately and are not deducted from sales totals.",
-    ];
-    return lines.join("\n");
-  }
-
-  async function exportDocx() {
-    const rows = [
-      new TableRow({ children: ["Date", "Product", "Employee", "Units", "Unit price", "Total"].map((text) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text, bold: true })] })] })) }),
-      ...thisMonthSales.map((s) => new TableRow({ children: [s.soldAt, s.productName, s.employee, String(s.quantity), money(s.unitPrice), money(s.quantity * s.unitPrice)].map((text) => new TableCell({ children: [new Paragraph(text)] })) })),
-    ];
-    const doc = new Document({ sections: [{ children: [
-      new Paragraph({ text: "Monthly Sales Report", heading: "Heading1" }),
-      new Paragraph("Business: My Business"),
-      new Paragraph("Period: " + new Date(reportMonth + "-15T12:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" })),
-      new Paragraph(" "),
-      new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }),
-      new Paragraph(" "),
-      new Paragraph({ text: "Product summary", heading: "Heading2" }),
-      ...reportProducts.map((p) => new Paragraph(`${p.name}: ${p.units} ${p.unit}(s) — ${money(p.value)}`)),
-      new Paragraph({ children: [new TextRun({ text: `Total units sold: ${monthUnits}`, bold: true })] }),
-      new Paragraph({ children: [new TextRun({ text: `Total sales value: ${money(monthValue)}`, bold: true })] }),
-      new Paragraph("Returns are tracked separately and are not deducted from sales totals."),
-    ] }] });
-    const blob = await Packer.toBlob(doc);
-    saveAs(blob, `sales-report-${reportMonth}.docx`);
-  }
-
-  async function exportReport(format: "txt" | "docx" | "copy") {
-    if (format === "copy") {
-      try {
-        await navigator.clipboard.writeText(reportText());
-        notify("Report copied to clipboard.");
-      } catch {
-        notify("Clipboard access was blocked. Use Download TXT instead.");
-      }
-    } else if (format === "txt") {
-      saveAs(new Blob([reportText()], { type: "text/plain;charset=utf-8" }), `sales-report-${reportMonth}.txt`);
-      notify("TXT report downloaded.");
-    } else {
-      try {
-        await exportDocx();
-        notify("Word report downloaded.");
-      } catch {
-        notify("Could not create the Word file. Please try again.");
-      }
-    }
-  }
-
-  const navItems: { label: Page; icon: typeof LayoutDashboard }[] = [
-    { label: "Overview", icon: LayoutDashboard }, { label: "Sales", icon: ShoppingBag },
-    { label: "Products", icon: Package }, { label: "Returns", icon: ArrowDownLeft },
-    { label: "Reports", icon: BarChart3 },
-  ];
-
-  return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
-        <div className="brand">
-          <div className="brand-mark"><ShoppingBag size={20} strokeWidth={2.4} /></div>
-          <div><strong>Stockwise</strong><span>SALES TRACKER</span></div>
-          <button className="icon-button sidebar-close" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"><X size={19} /></button>
-        </div>
-        <div className="workspace-label">WORKSPACE</div>
-        <button className="business-switcher" onClick={() => notify("Business switching will be connected with account setup.")}>
-          <div className="business-avatar">MB</div><span><strong>My Business</strong><small>Business workspace</small></span><ChevronDown size={16} />
-        </button>
-        <div className="nav-label">MENU</div>
-        <nav className="nav-list" aria-label="Main navigation">
-          {navItems.map(({ label, icon: Icon }) => (
-            <button key={label} className={`nav-item ${page === label ? "active" : ""}`} onClick={() => { setPage(label); setMobileNavOpen(false); setSearch(""); }}>
-              <Icon size={19} strokeWidth={1.9} /><span>{label}</span>
-              {label === "Returns" && returns.length > 0 && <span className="nav-count">{returns.length}</span>}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="help-card"><div className="help-icon"><CircleHelp size={18} /></div><strong>Need a hand?</strong><p>Your sales records, all in one place.</p><button onClick={() => notify("Help centre will be added in a later version.")}>Explore help <ArrowUpRight size={14} /></button></div>
-          <button className="nav-item settings-item" onClick={() => notify("Settings will be available after account setup.")}><Settings2 size={18} /><span>Settings</span></button>
-          <div className="profile-row"><div className="profile-avatar">CM</div><div className="profile-copy"><strong>Chanda M.</strong><span>Employee account</span></div><button className="icon-button" onClick={() => notify("Profile settings are coming soon.")} aria-label="Profile options"><ChevronDown size={17} /></button></div>
-        </div>
-      </aside>
-
-      {mobileNavOpen && <button className="mobile-scrim" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
-      <main className="main-area">
-        <header className="topbar">
-          <button className="icon-button mobile-menu" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><Menu size={21} /></button>
-          <div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><strong>{page}</strong></div>
-          <div className="topbar-actions"><span className="today-pill"><span className="status-dot" /> Business workspace</span><button className="icon-button notification-button" aria-label="Notifications" onClick={() => notify("You're all caught up.")}><Bell size={19} /><i /></button><div className="top-avatar">CM</div></div>
-        </header>
-        <div className="page-content">
-          {page === "Overview" && <>
-            <div className="page-heading"><div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h1>Good morning, Chanda <span>✳</span></h1><p>Here's what's happening with your sales today.</p></div><button className="primary-button" onClick={() => setShowSaleForm(true)}><Plus size={18} /> Record a sale</button></div>
-            <div className="stats-grid">
-              <StatCard label="Sales today" value={money(todayValue)} icon={<TrendingUp size={19} />} tone="violet" detail={`${todaySales.length} sale entries recorded`} />
-              <StatCard label="Units sold today" value={String(todaySales.reduce((sum, s) => sum + s.quantity, 0))} icon={<Package size={19} />} tone="blue" detail="Across all products" />
-              <StatCard label="Sales this month" value={money(monthValue)} icon={<BarChart3 size={19} />} tone="green" detail={`${monthUnits} total units sold`} />
-              <StatCard label="Returns recorded" value={String(returns.length)} icon={<ArrowDownLeft size={19} />} tone="orange" detail="Tracked separately from sales" />
-            </div>
-            <div className="content-grid">
-              <section className="panel recent-panel"><div className="panel-heading"><div><h2>Recent sales</h2><p>Your latest recorded transactions</p></div><button className="text-button" onClick={() => setPage("Sales")}>View all <ArrowUpRight size={15} /></button></div><SalesTable sales={sales.slice(0, 5)} /></section>
-              <section className="panel quick-panel"><div className="panel-heading"><div><h2>Quick actions</h2><p>Keep your records up to date</p></div></div><button className="quick-action" onClick={() => setShowSaleForm(true)}><div className="quick-icon quick-purple"><Plus size={19} /></div><span><strong>Record a sale</strong><small>Add a new transaction</small></span><ArrowUpRight size={16} /></button><button className="quick-action" onClick={() => setShowProductForm(true)}><div className="quick-icon quick-blue"><Package size={19} /></div><span><strong>Add a product</strong><small>Update your product list</small></span><ArrowUpRight size={16} /></button><button className="quick-action" onClick={() => setShowReturnForm(true)}><div className="quick-icon quick-orange"><ArrowDownLeft size={19} /></div><span><strong>Record a return</strong><small>Log returned goods</small></span><ArrowUpRight size={16} /></button><button className="quick-action" onClick={() => setPage("Reports")}><div className="quick-icon quick-green"><FileText size={19} /></div><span><strong>View reports</strong><small>Review monthly performance</small></span><ArrowUpRight size={16} /></button></section>
-            </div>
-            <section className="panel product-panel"><div className="panel-heading"><div><h2>Top products</h2><p>By units sold this month</p></div><button className="text-button" onClick={() => setPage("Products")}>All products <ArrowUpRight size={15} /></button></div><div className="top-products">{reportProducts.sort((a,b) => b.units-a.units).slice(0, 4).map((p, i) => <div className="top-product" key={p.id}><div className={`product-symbol symbol-${i % 4}`}><Package size={18} /></div><div className="top-product-name"><strong>{p.name}</strong><span>{p.category}</span></div><div className="product-units"><strong>{p.units}</strong><span>units</span></div><div className="product-value">{money(p.value)}</div></div>)}{reportProducts.length === 0 && <EmptyState text="Record sales to see your top products here." />}</div></section>
-            <p className="prototype-note"><span /> Prototype preview · Sample records are shown. Changes are not saved to a database yet.</p>
-          </>}
-
-          {page === "Sales" && <><PageHeader eyebrow="TRANSACTION HISTORY" title="Sales" description="Review and record every sale." action={<button className="primary-button" onClick={() => setShowSaleForm(true)}><Plus size={18} /> Record a sale</button>} /><div className="toolbar"><div className="search-box"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search product, employee, date..." /></div><span className="result-count">{filteredSales.length} entries</span></div><section className="panel table-panel"><SalesTable sales={filteredSales} /></section><p className="prototype-note"><span /> Sample data · Database persistence is not connected yet.</p></>}
-
-          {page === "Products" && <><PageHeader eyebrow="YOUR CATALOGUE" title="Products" description="Manage the products you sell and their usual prices." action={<button className="primary-button" onClick={() => setShowProductForm(true)}><Plus size={18} /> Add product</button>} /><div className="toolbar"><div className="search-box"><Search size={17} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search products..." /></div><span className="result-count">{filteredProducts.length} products</span></div><section className="panel table-panel"><div className="data-table-wrap"><table><thead><tr><th>PRODUCT</th><th>CATEGORY</th><th>UNIT</th><th>DEFAULT PRICE</th><th>UNITS SOLD THIS MONTH</th></tr></thead><tbody>{filteredProducts.map((p, i) => <tr key={p.id}><td><div className="table-product"><div className={`product-mini mini-${i % 4}`}><Package size={16} /></div><strong>{p.name}</strong></div></td><td><span className="category-pill">{p.category}</span></td><td>{p.unit}</td><td className="numeric-cell">{money(p.price)}</td><td className="numeric-cell">{thisMonthSales.filter((s) => s.productId === p.id).reduce((sum,s) => sum+s.quantity,0)}</td></tr>)}</tbody></table>{filteredProducts.length === 0 && <EmptyState text="No matching products. Add a product to get started." />}</div></section><p className="prototype-note"><span /> A sale keeps the price used at the time of sale, even if the default price changes later.</p></>}
-
-          {page === "Returns" && <><PageHeader eyebrow="RETURN LOG" title="Returned goods" description="Record returns separately. Returned items are not automatically added back to sellable stock." action={<button className="primary-button" onClick={() => setShowReturnForm(true)}><Plus size={18} /> Record a return</button>} /><section className="panel table-panel"><div className="data-table-wrap"><table><thead><tr><th>PRODUCT</th><th>QUANTITY</th><th>RETURN DATE</th><th>REASON / NOTES</th></tr></thead><tbody>{returns.map((r) => <tr key={r.id}><td><div className="table-product"><div className="product-mini mini-orange"><ArrowDownLeft size={16} /></div><strong>{r.productName}</strong></div></td><td>{r.quantity}</td><td>{dateLabel(r.returnedAt)}</td><td>{r.reason}</td></tr>)}</tbody></table>{returns.length === 0 && <EmptyState text="No returns recorded yet." />}</div></section><div className="info-banner"><ArrowDownRight size={18} /><p><strong>Returns are kept separate</strong><br />Sales totals show the value of recorded sales. Returns are reported separately and are not automatically deducted.</p></div></>}
-
-          {page === "Reports" && <><PageHeader eyebrow="BUSINESS INSIGHTS" title="Monthly reports" description="Choose a month, review the totals, and export a report." /><div className="report-controls panel"><div><label htmlFor="report-month">REPORTING PERIOD</label><div className="month-input"><CalendarDays size={17} /><input id="report-month" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} /></div></div><div className="export-actions"><button className="secondary-button" onClick={() => void exportReport("copy")}><ClipboardList size={16} /> Copy text</button><button className="secondary-button" onClick={() => void exportReport("txt")}><Download size={16} /> Download TXT</button><button className="primary-button" onClick={() => void exportReport("docx")}><FileText size={16} /> Export Word</button></div></div><div className="report-stats"><StatCard label="Total units sold" value={String(monthUnits)} icon={<Package size={19} />} tone="blue" detail="All products combined" /><StatCard label="Total sales value" value={money(monthValue)} icon={<TrendingUp size={19} />} tone="green" detail="Based on recorded sale prices" /><StatCard label="Sales entries" value={String(thisMonthSales.length)} icon={<ShoppingBag size={19} />} tone="violet" detail="Transactions in selected month" /></div><section className="panel report-panel"><div className="panel-heading"><div><h2>Product summary</h2><p>Sales for {new Date(reportMonth + "-15T12:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</p></div><span className="report-badge"><CalendarDays size={14} /> Monthly summary</span></div><div className="data-table-wrap"><table><thead><tr><th>PRODUCT</th><th>UNITS SOLD</th><th>SALES VALUE</th></tr></thead><tbody>{reportProducts.map((p) => <tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.units} {p.unit}(s)</td><td className="numeric-cell">{money(p.value)}</td></tr>)}</tbody></table>{reportProducts.length === 0 && <EmptyState text="No sales for this month yet. Try another month or record a sale." />}</div><div className="report-total"><div><span>Total units sold</span><strong>{monthUnits}</strong></div><div><span>Total sales value</span><strong>{money(monthValue)}</strong></div></div></section><section className="panel report-panel"><div className="panel-heading"><div><h2>Transaction details</h2><p>Every recorded sale included in this report</p></div></div><SalesTable sales={thisMonthSales} /></section><div className="info-banner"><FileText size={18} /><p><strong>Report note</strong><br />Returns are shown in their own section and are not subtracted from sales totals. This avoids presenting an unverified net-sales figure.</p></div></>}
-
-        </div>
-      </main>
-
-      {showSaleForm && <Modal title="Record a sale" description="Enter the details of this transaction." onClose={() => setShowSaleForm(false)}><form className="form-stack" onSubmit={handleSaleSubmit}><label>Product<select value={saleProduct} onChange={(e) => { const p = products.find((item) => item.id === e.target.value); setSaleProduct(e.target.value); if (p) setSalePrice(String(p.price)); }} required>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><button type="button" className="inline-add" onClick={() => { setShowSaleForm(false); setShowProductForm(true); }}><Plus size={15} /> Add a new product instead</button><div className="form-two-col"><label>Quantity (units)<input type="number" min="0.01" step="any" value={saleQty} onChange={(e) => setSaleQty(e.target.value)} required /></label><label>Unit price (ZMW)<input type="number" min="0" step="0.01" value={salePrice} onChange={(e) => setSalePrice(e.target.value)} required /></label></div><label>Date sold<input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} required /></label><label>Employee name<input value={saleEmployee} onChange={(e) => setSaleEmployee(e.target.value)} placeholder="Name shown in reports" required /></label><div className="sale-total-preview"><span>Total sale value</span><strong>{money(Math.max(0, Number(saleQty) || 0) * Math.max(0, Number(salePrice) || 0))}</strong></div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowSaleForm(false)}>Cancel</button><button type="submit" className="primary-button"><Check size={17} /> Save sale</button></div></form></Modal>}
-
-      {showProductForm && <Modal title="Add a product" description="Add a product to your business catalogue." onClose={() => setShowProductForm(false)}><form className="form-stack" onSubmit={handleProductSubmit}><label>Product name<input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Maize meal — 25kg" required /></label><div className="form-two-col"><label>Unit<input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="bottle, bag, unit..." required /></label><label>Default price (ZMW)<input type="number" min="0" step="0.01" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} required /></label></div><label>Category<input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="e.g. Groceries" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProductForm(false)}>Cancel</button><button type="submit" className="primary-button"><Check size={17} /> Add product</button></div></form></Modal>}
-
-      {showReturnForm && <Modal title="Record a return" description="Keep returned goods separate from sales and stock assumptions." onClose={() => setShowReturnForm(false)}><form className="form-stack" onSubmit={handleReturnSubmit}><label>Product<select value={returnProduct} onChange={(e) => setReturnProduct(e.target.value)} required>{products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="form-two-col"><label>Quantity returned<input type="number" min="0.01" step="any" value={returnQty} onChange={(e) => setReturnQty(e.target.value)} required /></label><label>Date returned<input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} required /></label></div><label>Reason / notes (optional)<textarea value={returnReason} onChange={(e) => setReturnReason(e.target.value)} placeholder="e.g. damaged packaging, customer changed mind" rows={3} /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowReturnForm(false)}>Cancel</button><button type="submit" className="primary-button"><Check size={17} /> Save return</button></div></form></Modal>}
-
-      {notice && <div className="toast" role="status"><Check size={17} />{notice}<button onClick={() => setNotice("")} aria-label="Dismiss notification"><X size={15} /></button></div>}
-    </div>
-  );
+export default function App(){
+ const [session,setSession]=useState<Session|null>(null);
+ const [authLoading,setAuthLoading]=useState(true);
+ const [authMode,setAuthMode]=useState<"signin"|"signup">("signup");
+ const [authError,setAuthError]=useState("");
+ const [authBusy,setAuthBusy]=useState(false);
+ const [displayName,setDisplayName]=useState("");
+ const [email,setEmail]=useState("");
+ const [password,setPassword]=useState("");
+ useEffect(()=>{
+  if(!supabase){setAuthLoading(false);return;}
+  supabase.auth.getSession().then(({data})=>{setSession(data.session);setAuthLoading(false);});
+  const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,next)=>{setSession(next);});
+  return ()=>subscription.unsubscribe();
+ },[]);
+ async function authenticate(e:FormEvent){
+  e.preventDefault(); if(!supabase)return; setAuthBusy(true);setAuthError("");
+  try{
+   if(authMode==="signup"){
+    const {data,error}=await supabase.auth.signUp({email:email.trim(),password,options:{data:{display_name:displayName.trim()}}});
+    if(error)throw error;
+    if(!data.session){setAuthError("Account created. Check your email to confirm, then sign in.");return;}
+    await supabase.from("profiles").upsert({id:data.user!.id,display_name:displayName.trim()});
+   }else{
+    const {error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)throw error;
+   }
+  }catch(err){setAuthError(err instanceof Error?err.message:"Could not authenticate.");}
+  finally{setAuthBusy(false);}
+ }
+ if(!isSupabaseConfigured)return <AuthShell title="Connect your Supabase project" message="Add the project URL and publishable key to your environment before using authentication." />;
+ if(authLoading)return <AuthShell title="Loading Stockwise…" message="Checking your account session." />;
+ if(!session)return <div className="auth-page"><div className="auth-card"><div className="brand-mark"><ShoppingBag size={20}/></div><div className="eyebrow">STOCK & SALES TRACKER</div><h1>{authMode==="signup"?"Create your account":"Welcome back"}</h1><p>{authMode==="signup"?"Create an employee account to start tracking business sales.":"Sign in to continue to your business workspace."}</p><form className="form-stack" onSubmit={authenticate}>{authMode==="signup"&&<label>Your name<input value={displayName} onChange={e=>setDisplayName(e.target.value)} autoComplete="name" required/></label>}<label>Email address<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" required/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={6} required/></label>{authError&&<div className="auth-error" role="alert">{authError}</div>}<button className="primary-button" disabled={authBusy}>{authBusy?"Please wait…":authMode==="signup"?"Create account":"Sign in"}</button></form><button className="auth-switch" onClick={()=>{setAuthMode(authMode==="signup"?"signin":"signup");setAuthError("");}}>{authMode==="signup"?"Already have an account? Sign in":"New to Stockwise? Create an account"}</button><small className="auth-foot">Your account data is protected by Supabase authentication and database access policies.</small></div></div>;
+ return <Workspace session={session} onSignOut={()=>supabase?.auth.signOut()}/>;
 }
 
-function StatCard({ label, value, icon, tone, detail }: { label: string; value: string; icon: ReactNode; tone: string; detail: string }) {
-  return <div className="stat-card"><div className="stat-top"><span>{label}</span><div className={`stat-icon ${tone}`}>{icon}</div></div><strong className="stat-value">{value}</strong><div className="stat-detail">{detail}</div></div>;
-}
-function PageHeader({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
-  return <div className="page-heading subpage-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>;
-}
-function SalesTable({ sales }: { sales: Sale[] }) {
-  return <div className="data-table-wrap"><table><thead><tr><th>PRODUCT</th><th>EMPLOYEE</th><th>DATE</th><th>UNITS</th><th className="align-right">TOTAL</th></tr></thead><tbody>{sales.map((s) => <tr key={s.id}><td><div className="table-product"><div className="product-mini"><Package size={16} /></div><div><strong>{s.productName}</strong><small>{money(s.unitPrice)} / unit</small></div></div></td><td><div className="employee-cell"><div className="employee-dot">{s.employee.split(" ").map((n) => n[0]).join("").slice(0,2)}</div>{s.employee}</div></td><td>{dateLabel(s.soldAt)}</td><td><span className="quantity-pill">{s.quantity}</span></td><td className="align-right numeric-cell">{money(s.quantity * s.unitPrice)}</td></tr>)}</tbody></table>{sales.length === 0 && <EmptyState text="No sales found. Record a sale to start building your history." />}</div>;
-}
-function EmptyState({ text }: { text: string }) { return <div className="empty-state"><div className="empty-icon"><ClipboardList size={22} /></div><p>{text}</p></div>; }
-function Modal({ title, description, onClose, children }: { title: string; description: string; onClose: () => void; children: React.ReactNode }) {
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><section className="modal-card" role="dialog" aria-modal="true" aria-label={title}><div className="modal-heading"><div><h2>{title}</h2><p>{description}</p></div><button className="icon-button" onClick={onClose} aria-label="Close dialog"><X size={19} /></button></div>{children}</section></div>;
-}
+function AuthShell({title,message}:{title:string;message:string}){return <div className="auth-page"><div className="auth-card"><div className="brand-mark"><ShoppingBag size={20}/></div><h1>{title}</h1><p>{message}</p></div></div>}
 
-export default App;
+function Workspace({session,onSignOut}:{session:Session;onSignOut:()=>void}){
+ const [business,setBusiness]=useState<Business|null>(null);
+ const [businessName,setBusinessName]=useState("");
+ const [loading,setLoading]=useState(true);
+ const [error,setError]=useState("");
+ const [products,setProducts]=useState<Product[]>([]);
+ const [sales,setSales]=useState<Sale[]>([]);
+ const [returns,setReturns]=useState<ReturnRecord[]>([]);
+ const [page,setPage]=useState<Page>("Overview");
+ const [showProduct,setShowProduct]=useState(false);
+ const [showSale,setShowSale]=useState(false);
+ const [showReturn,setShowReturn]=useState(false);
+ const [notice,setNotice]=useState("");
+ const [month,setMonth]=useState(today.slice(0,7));
+ const [search,setSearch]=useState("");
+ const [employee,setEmployee]=useState(session.user.user_metadata?.display_name||session.user.email||"Employee");
+ const currency=business?.currency_code||"ZMW";
+ const notify=(m:string)=>{setNotice(m);window.setTimeout(()=>setNotice(""),3000);};
+ async function loadBusiness(){
+  if(!supabase)return;
+  setLoading(true);setError("");
+  const {data,error}=await supabase.from("businesses").select("id,name,currency_code").eq("owner_user_id",session.user.id).order("created_at").limit(1).maybeSingle();
+  if(error){setError(error.message);setLoading(false);return;}
+  if(!data){setBusiness(null);setLoading(false);return;}
+  setBusiness(data as Business);
+  const [p,s,r]=await Promise.all([
+   supabase.from("products").select("id,name,category,unit_label,default_unit_price").eq("business_id",data.id).eq("is_active",true).order("name"),
+   supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,sold_on,products(name)").eq("business_id",data.id).order("sold_on",{ascending:false}),
+   supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products(name)").eq("business_id",data.id).order("returned_on",{ascending:false})
+  ]);
+  if(p.error||s.error||r.error){setError(p.error?.message||s.error?.message||r.error?.message||"Could not load records.");setLoading(false);return;}
+  setProducts((p.data||[]).map((x:any)=>({id:x.id,name:x.name,category:x.category,unit:x.unit_label,price:Number(x.default_unit_price)})));
+  setSales((s.data||[]).map((x:any)=>({id:x.id,productId:x.product_id,productName:x.products?.name||"Product",quantity:Number(x.quantity),unitPrice:Number(x.unit_price),soldAt:x.sold_on,employee:x.employee_name})));
+  setReturns((r.data||[]).map((x:any)=>({id:x.id,productId:x.product_id,productName:x.products?.name||"Product",quantity:Number(x.quantity),returnedAt:x.returned_on,reason:x.reason||"Not specified"})));
+  setLoading(false);
+ }
+ useEffect(()=>{void loadBusiness();},[session.user.id]);
+ async function createBusiness(e:FormEvent){e.preventDefault();if(!supabase)return;setError("");const name=businessName.trim();if(!name)return;const {data,error}=await supabase.from("businesses").insert({owner_user_id:session.user.id,name,currency_code:"ZMW"}).select("id,name,currency_code").single();if(error){setError(error.message);return;}setBusiness(data as Business);setBusinessName("");void loadBusiness();}
+ async function addProduct(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!supabase||!business)return;const f=new FormData(e.currentTarget);const name=String(f.get("name")).trim(),unit=String(f.get("unit")).trim(),category=String(f.get("category")).trim()||"General",price=Number(f.get("price"));if(!name||!unit||!Number.isFinite(price)||price<0)return;const {error}=await supabase.from("products").insert({business_id:business.id,name,unit_label:unit,category,default_unit_price:price,created_by:session.user.id});if(error){notify(error.message);return;}setShowProduct(false);await loadBusiness();notify("Product saved.");}
+ async function addSale(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!supabase||!business)return;const f=new FormData(e.currentTarget),product=products.find(p=>p.id===String(f.get("product_id"))),qty=Number(f.get("quantity")),price=Number(f.get("price")),date=String(f.get("date")),person=String(f.get("employee")).trim();if(!product||qty<=0||!Number.isFinite(qty)||price<0||!person)return;const {error}=await supabase.from("sales").insert({business_id:business.id,product_id:product.id,recorded_by:session.user.id,employee_name:person,quantity:qty,unit_price:price,sold_on:date,sold_at:date+"T12:00:00Z"});if(error){notify(error.message);return;}setShowSale(false);await loadBusiness();notify("Sale saved to your database.");}
+ async function addReturn(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!supabase||!business)return;const f=new FormData(e.currentTarget),product=products.find(p=>p.id===String(f.get("product_id"))),qty=Number(f.get("quantity")),date=String(f.get("date")),reason=String(f.get("reason")).trim();if(!product||qty<=0||!Number.isFinite(qty))return;const {error}=await supabase.from("returns").insert({business_id:business.id,product_id:product.id,recorded_by:session.user.id,employee_name:employee.trim()||"Employee",quantity:qty,returned_on:date,reason:reason||null});if(error){notify(error.message);return;}setShowReturn(false);await loadBusiness();notify("Return saved separately from sales.");}
+ const monthSales=sales.filter(s=>s.soldAt.slice(0,7)===month), monthValue=monthSales.reduce((sum,s)=>sum+s.quantity*s.unitPrice,0), monthUnits=monthSales.reduce((sum,s)=>sum+s.quantity,0);
+ const todaySales=sales.filter(s=>s.soldAt===today),todayValue=todaySales.reduce((sum,s)=>sum+s.quantity*s.unitPrice,0);
+ const reportProducts=products.map(p=>({...p,units:monthSales.filter(s=>s.productId===p.id).reduce((n,s)=>n+s.quantity,0),value:monthSales.filter(s=>s.productId===p.id).reduce((n,s)=>n+s.quantity*s.unitPrice,0)})).filter(p=>p.units>0);
+ const filteredSales=sales.filter(s=>(s.productName+s.employee+s.soldAt).toLowerCase().includes(search.toLowerCase()));
+ const filteredProducts=products.filter(p=>(p.name+p.category).toLowerCase().includes(search.toLowerCase()));
+ const reportText=()=>["STOCK & SALES TRACKER — MONTHLY SALES REPORT","Business: "+business?.name,"Period: "+month,"","DATE | PRODUCT | EMPLOYEE | UNITS | UNIT PRICE | TOTAL",...monthSales.map(s=>`${s.soldAt} | ${s.productName} | ${s.employee} | ${s.quantity} | ${money(s.unitPrice,currency)} | ${money(s.quantity*s.unitPrice,currency)}`),"","PRODUCT SUMMARY",...reportProducts.map(p=>`${p.name}: ${p.units} ${p.unit}(s) sold — ${money(p.value,currency)}`),"",`TOTAL UNITS SOLD: ${monthUnits}`,`TOTAL SALES VALUE: ${money(monthValue,currency)}`,"Returns are tracked separately."].join("\n");
+ if(loading)return <AuthShell title="Loading your workspace…" message="Fetching your business records." />;
+ if(!business)return <div className="auth-page"><div className="auth-card"><div className="brand-mark"><ShoppingBag size={20}/></div><div className="eyebrow">BUSINESS SETUP</div><h1>Set up your business</h1><p>Create a workspace to save products, sales and returns.</p><form className="form-stack" onSubmit={createBusiness}><label>Business name<input value={businessName} onChange={e=>setBusinessName(e.target.value)} placeholder="e.g. Banda General Dealers" required/></label>{error&&<div className="auth-error">{error}</div>}<button className="primary-button">Create business</button></form><button className="auth-switch" onClick={onSignOut}>Sign out</button></div></div>;
+ const nav: {label:Page;icon:any}[]=[{label:"Overview",icon:LayoutDashboard},{label:"Sales",icon:ShoppingBag},{label:"Products",icon:Package},{label:"Returns",icon:ArrowDownLeft},{label:"Reports",icon:BarChart3}];
+ return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark"><ShoppingBag size={20}/></div><div><strong>Stockwise</strong><span>SALES TRACKER</span></div></div><div className="workspace-label">WORKSPACE</div><div className="business-switcher"><div className="business-avatar">{business.name.slice(0,2).toUpperCase()}</div><span><strong>{business.name}</strong><small>Business workspace</small></span></div><div className="nav-label">MENU</div><nav className="nav-list">{nav.map(({label,icon:Icon})=><button key={label} className={`nav-item ${page===label?"active":""}`} onClick={()=>setPage(label)}><Icon size={19}/><span>{label}</span></button>)}</nav><div className="sidebar-bottom"><button className="nav-item" onClick={onSignOut}><LogOut size={18}/><span>Sign out</span></button><div className="profile-row"><div className="profile-avatar">{(session.user.user_metadata?.display_name||session.user.email||"U").slice(0,1).toUpperCase()}</div><div className="profile-copy"><strong>{session.user.user_metadata?.display_name||session.user.email}</strong><span>Signed in</span></div></div></div></aside>
+ <main className="main-area"><header className="topbar"><div className="breadcrumbs"><span>{business.name}</span><span className="crumb-slash">/</span><strong>{page}</strong></div><div className="topbar-actions"><span className="today-pill"><span className="status-dot"/> Saved workspace</span></div></header><div className="page-content">
+ {error&&<div className="auth-error">{error}</div>}
+ {page==="Overview"&&<><div className="page-heading"><div><div className="eyebrow">YOUR BUSINESS AT A GLANCE</div><h1>Welcome, {session.user.user_metadata?.display_name||"there"}</h1><p>Your records are now saved to your Supabase database.</p></div><button className="primary-button" onClick={()=>setShowSale(true)}><Plus size={18}/> Record a sale</button></div><div className="stats-grid"><Stat label="Sales today" value={money(todayValue,currency)} detail={todaySales.length+" sale entries"} /><Stat label="Units sold today" value={String(todaySales.reduce((n,s)=>n+s.quantity,0))} detail="Across all products"/><Stat label="Sales this month" value={money(monthValue,currency)} detail={monthUnits+" total units"}/><Stat label="Returns recorded" value={String(returns.length)} detail="Tracked separately"/></div><div className="content-grid"><section className="panel recent-panel"><div className="panel-heading"><div><h2>Recent sales</h2><p>Latest saved transactions</p></div><button className="text-button" onClick={()=>setPage("Sales")}>View all</button></div><SalesTable sales={sales.slice(0,5)} currency={currency}/></section><section className="panel quick-panel"><div className="panel-heading"><div><h2>Quick actions</h2><p>Keep records up to date</p></div></div><button className="quick-action" onClick={()=>setShowSale(true)}><span><strong>Record a sale</strong><small>Add transaction</small></span><Plus size={16}/></button><button className="quick-action" onClick={()=>setShowProduct(true)}><span><strong>Add a product</strong><small>Update catalogue</small></span><Plus size={16}/></button><button className="quick-action" onClick={()=>setShowReturn(true)}><span><strong>Record a return</strong><small>Log returned goods</small></span><Plus size={16}/></button></section></div></>}
+ {page==="Products"&&<><PageHeader title="Products" description="Manage products and default prices." action={<button className="primary-button" onClick={()=>setShowProduct(true)}><Plus size={18}/> Add product</button>}/><SearchBox search={search} setSearch={setSearch}/><section className="panel table-panel"><table><thead><tr><th>PRODUCT</th><th>CATEGORY</th><th>UNIT</th><th>DEFAULT PRICE</th></tr></thead><tbody>{filteredProducts.map(p=><tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.category}</td><td>{p.unit}</td><td>{money(p.price,currency)}</td></tr>)}</tbody></table>{!filteredProducts.length&&<Empty text="No products yet. Add your first product."/ >}</section></>}
+ {page==="Sales"&&<><PageHeader title="Sales" description="Review recorded transactions." action={<button className="primary-button" onClick={()=>setShowSale(true)}><Plus size={18}/> Record a sale</button>}/><SearchBox search={search} setSearch={setSearch}/><section className="panel table-panel"><SalesTable sales={filteredSales} currency={currency}/></section></>}
+ {page==="Returns"&&<><PageHeader title="Returned goods" description="Returns are stored separately and are not automatically added to stock." action={<button className="primary-button" onClick={()=>setShowReturn(true)}><Plus size={18}/> Record return</button>}/><section className="panel table-panel"><table><thead><tr><th>PRODUCT</th><th>QUANTITY</th><th>RETURN DATE</th><th>REASON</th></tr></thead><tbody>{returns.map(r=><tr key={r.id}><td>{r.productName}</td><td>{r.quantity}</td><td>{dateLabel(r.returnedAt)}</td><td>{r.reason}</td></tr>)}</tbody></table>{!returns.length&&<Empty text="No returns recorded yet."/ >}</section></>}
+ {page==="Reports"&&<><PageHeader title="Monthly reports" description="Review monthly totals and export your report."/><div className="report-controls panel"><label>REPORTING PERIOD<input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></label><div className="export-actions"><button className="secondary-button" onClick={()=>{const blob=new Blob([reportText()],{type:"text/plain;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`sales-report-${month}.txt`;a.click();URL.revokeObjectURL(url);}}> <Download size={16}/> Download TXT</button><button className="secondary-button" onClick={()=>void navigator.clipboard.writeText(reportText()).then(()=>notify("Report copied."))}><FileText size={16}/> Copy text</button></div></div><div className="report-stats"><Stat label="Units sold" value={String(monthUnits)} detail="All products"/><Stat label="Sales value" value={money(monthValue,currency)} detail="Recorded sale prices"/><Stat label="Sales entries" value={String(monthSales.length)} detail="Selected month"/></div><section className="panel report-panel"><h2>Product summary</h2><table><thead><tr><th>PRODUCT</th><th>UNITS SOLD</th><th>SALES VALUE</th></tr></thead><tbody>{reportProducts.map(p=><tr key={p.id}><td>{p.name}</td><td>{p.units} {p.unit}(s)</td><td>{money(p.value,currency)}</td></tr>)}</tbody></table><p><strong>Total units:</strong> {monthUnits} &nbsp; <strong>Total value:</strong> {money(monthValue,currency)}</p></section><section className="panel report-panel"><h2>Transaction details</h2><SalesTable sales={monthSales} currency={currency}/></section></>}
+ </div></main>
+ {showProduct&&<Modal title="Add product" close={()=>setShowProduct(false)}><form className="form-stack" onSubmit={addProduct}><label>Product name<input name="name" required/></label><div className="form-two-col"><label>Unit<input name="unit" placeholder="bottle, bag, unit" required/></label><label>Default price (ZMW)<input name="price" type="number" min="0" step="0.01" required/></label></div><label>Category<input name="category" defaultValue="General"/></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowProduct(false)}>Cancel</button><button className="primary-button">Save product</button></div></form></Modal>}
+ {showSale&&<Modal title="Record a sale" close={()=>setShowSale(false)}><form className="form-stack" onSubmit={addSale}><label>Product<select name="product_id" required>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="form-two-col"><label>Quantity<input name="quantity" type="number" min="0.001" step="any" defaultValue="1" required/></label><label>Unit price (ZMW)<input name="price" type="number" min="0" step="0.01" defaultValue={products[0]?.price??0} required/></label></div><label>Date<input name="date" type="date" defaultValue={today} required/></label><label>Employee name<input name="employee" value={employee} onChange={e=>setEmployee(e.target.value)} required/></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowSale(false)}>Cancel</button><button className="primary-button">Save sale</button></div></form></Modal>}
+ {showReturn&&<Modal title="Record a return" close={()=>setShowReturn(false)}><form className="form-stack" onSubmit={addReturn}><label>Product<select name="product_id" required>{products.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="form-two-col"><label>Quantity<input name="quantity" type="number" min="0.001" step="any" defaultValue="1" required/></label><label>Date<input name="date" type="date" defaultValue={today} required/></label></div><label>Reason / notes<input name="reason" placeholder="Optional"/></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowReturn(false)}>Cancel</button><button className="primary-button">Save return</button></div></form></Modal>}
+ {notice&&<div className="toast" role="status">{notice}<button onClick={()=>setNotice("")}>×</button></div>}
+ </div>;
+}
+function Stat({label,value,detail}:{label:string;value:string;detail:string}){return <div className="stat-card"><div className="stat-top"><span>{label}</span></div><strong className="stat-value">{value}</strong><div className="stat-detail">{detail}</div></div>}
+function PageHeader({title,description,action}:{title:string;description:string;action?:React.ReactNode}){return <div className="page-heading subpage-heading"><div><div className="eyebrow">BUSINESS WORKSPACE</div><h1>{title}</h1><p>{description}</p></div>{action}</div>}
+function SearchBox({search,setSearch}:{search:string;setSearch:(s:string)=>void}){return <div className="toolbar"><div className="search-box"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"/></div></div>}
+function SalesTable({sales,currency}:{sales:Sale[];currency:string}){return <div className="data-table-wrap"><table><thead><tr><th>PRODUCT</th><th>EMPLOYEE</th><th>DATE</th><th>UNITS</th><th>TOTAL</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td>{s.productName}<small>{money(s.unitPrice,currency)} / unit</small></td><td>{s.employee}</td><td>{dateLabel(s.soldAt)}</td><td>{s.quantity}</td><td>{money(s.quantity*s.unitPrice,currency)}</td></tr>)}</tbody></table>{!sales.length&&<Empty text="No sales records yet."/ >}</div>}
+function Empty({text}:{text:string}){return <div className="empty-state"><p>{text}</p></div>}
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}){return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}><section className="modal-card" role="dialog" aria-modal="true"><div className="modal-heading"><h2>{title}</h2><button className="icon-button" onClick={close}>×</button></div>{children}</section></div>}
