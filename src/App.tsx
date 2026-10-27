@@ -24,7 +24,13 @@ export default function App(){
  const [password,setPassword]=useState("");
  useEffect(()=>{
   if(!supabase){setAuthLoading(false);return;}
-  supabase.auth.getSession().then(({data})=>{setSession(data.session);setAuthLoading(false);});
+  supabase.auth.getSession()
+   .then(({data})=>{setSession(data.session);setAuthLoading(false);})
+   .catch((err:unknown)=>{
+    console.error("Could not restore Supabase session:",err);
+    setAuthError(err instanceof Error?err.message:"Could not restore your session.");
+    setAuthLoading(false);
+   });
   const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,next)=>{setSession(next);});
   return ()=>subscription.unsubscribe();
  },[]);
