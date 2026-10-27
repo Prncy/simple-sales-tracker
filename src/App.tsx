@@ -77,7 +77,15 @@ export default function App() {
   });
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [authMode, setAuthMode] = useState<"signup" | "signin">("signup");
+  const [authScreen, setAuthScreen] = useState<"auth" | "forgot" | "reset">(() => new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type") === "recovery" ? "reset" : "auth");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -119,11 +127,19 @@ export default function App() {
   const [reportDate, setReportDate] = useState(today());
 
   useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+    return () => { window.removeEventListener("online", updateOnlineStatus); window.removeEventListener("offline", updateOnlineStatus); };
+  }, []);
+
+  useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
     const queryParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const callbackError = queryParams.get("error_description") || hashParams.get("error_description") || queryParams.get("error");
     const isAuthCallback = hashParams.has("access_token") || queryParams.has("code") || queryParams.has("token_hash");
+    if (hashParams.get("type") === "recovery" || queryParams.get("type") === "recovery") setAuthScreen("reset");
     if (callbackError) setAuthError(callbackError.replace(/\+/g, " "));
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       setSession(data.session);
@@ -132,7 +148,10 @@ export default function App() {
       if (data.session && isAuthCallback) setNotice("Email confirmed successfully. Your account is ready.");
       if (isAuthCallback || callbackError) window.history.replaceState({}, document.title, window.location.pathname);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") setAuthScreen("reset");
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -237,6 +256,55 @@ export default function App() {
     finally { setAuthLoading(false); }
   }
 
+  async function requestPasswordReset(event: FormEvent) {
+    event.preventDefault(); setAuthError(""); setAuthMessage("");
+    if (!supabase) return;
+    setAuthLoading(true);
+    try {
+      const redirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      if (resetError) throw resetError;
+      setAuthMessage("If an account exists for that email, a password-reset link has been sent. Check your inbox and spam folder.");
+    } catch (e) { setAuthError(e instanceof Error ? e.message : "We couldn't send a reset link. Please try again."); }
+    finally { setAuthLoading(false); }
+  }
+
+  async function saveRecoveredPassword(event: FormEvent) {
+    event.preventDefault(); setAuthError(""); setAuthMessage("");
+    if (!supabase) return;
+    const strength = assessPassword(resetPassword);
+    if (resetPassword !== resetConfirmPassword) { setAuthError("Your passwords don't match yet."); return; }
+    if (resetPassword.length < 8 || strength.score < 3) { setAuthError("Please choose a stronger password before continuing."); return; }
+    setPasswordSaving(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password: resetPassword });
+      if (updateError) throw updateError;
+      await supabase.auth.signOut();
+      setSession(null); setPassword(""); setResetPassword(""); setResetConfirmPassword("");
+      setAuthMode("signin"); setAuthScreen("auth");
+      setAuthMessage("Your password has been reset. Sign in with your new password.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (e) { setAuthError(e instanceof Error ? e.message : "We couldn't update your password. Request a new reset link and try again."); }
+    finally { setPasswordSaving(false); }
+  }
+
+  async function changeAccountPassword(event: FormEvent) {
+    event.preventDefault(); setError(""); setNotice("");
+    if (!supabase || !session?.user?.email) return;
+    const strength = assessPassword(newPassword);
+    if (newPassword !== confirmNewPassword) { setError("Your new passwords don't match."); return; }
+    if (newPassword.length < 8 || strength.score < 3) { setError("Choose a stronger password before saving."); return; }
+    setPasswordSaving(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({ email: session.user.email, password: currentPassword });
+      if (verifyError) throw new Error("Your current password wasn't accepted. Please check it and try again.");
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+      setCurrentPassword(""); setNewPassword(""); setConfirmNewPassword("");
+      setNotice("Password changed successfully.");
+    } catch (e) { setError(e instanceof Error ? e.message : "We couldn't change your password. Please try again."); }
+    finally { setPasswordSaving(false); }
+  }
   async function createBusiness(event: FormEvent) {
     event.preventDefault(); setError(""); setNotice("");
     if (!supabase || !session?.user?.id) return;
@@ -366,6 +434,29 @@ export default function App() {
 
   if (!isSupabaseConfigured) return <main className="config-screen"><div className="config-card"><span className="brand-mark"><Store /></span><h1>Kwacha Sales needs its connection settings</h1><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your deployment environment. No secret service-role key belongs in the browser.</p></div></main>;
   if (authLoading) return <main className="loading-screen"><div className="loading-mark"><Store /></div><p>Getting your workspace ready…</p></main>;
+  if (authScreen === "forgot") return (
+    <main className="auth-layout" data-theme={theme}>
+      <section className="auth-story"><a className="brand" href="#home"><span className="brand-mark"><Store size={20}/></span><span>Kwacha Sales<span className="brand-period">.</span></span></a><div className="auth-story-copy"><span className="eyebrow">ACCOUNT RECOVERY</span><h1>Back to business.<br/><span>We can help.</span></h1><p>Request a secure password reset link using the email address on your account.</p></div><div className="auth-footer"><span>Kwacha Sales · Simple sales. Clear numbers.</span></div></section>
+      <section className="auth-form-panel"><div className="auth-card"><button type="button" className="text-button back-to-auth" onClick={() => { setAuthScreen("auth"); setAuthError(""); setAuthMessage(""); }}>← Back to sign in</button><p className="eyebrow">ACCOUNT RECOVERY</p><h2>Forgot your password?</h2><p className="muted">Enter your email and we will send a reset link if an account matches.</p>
+        {authError && <div className="alert error" role="alert">{authError}</div>}{authMessage && <div className="alert success" role="status">{authMessage}</div>}
+        <form className="form-stack" onSubmit={requestPasswordReset}><label>Email address<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" required/></label><button className="button primary full" type="submit" disabled={authLoading}>{authLoading?"Sending link…":"Send reset link"} <ArrowRight size={17}/></button></form>
+        <p className="privacy-note"><ShieldCheck size={15}/> For privacy, this screen will not reveal whether an account exists for that email.</p></div></section>
+    </main>
+  );
+
+  if (authScreen === "reset") return (
+    <main className="auth-layout" data-theme={theme}>
+      <section className="auth-story"><a className="brand" href="#home"><span className="brand-mark"><Store size={20}/></span><span>Kwacha Sales<span className="brand-period">.</span></span></a><div className="auth-story-copy"><span className="eyebrow">ACCOUNT SECURITY</span><h1>A fresh start.<br/><span>A stronger password.</span></h1><p>Choose a new password to get back to your business workspace.</p></div><div className="auth-footer"><span>Kwacha Sales · Simple sales. Clear numbers.</span></div></section>
+      <section className="auth-form-panel"><div className="auth-card"><p className="eyebrow">RESET PASSWORD</p><h2>Choose a new password.</h2><p className="muted">Use a strong password you do not use for another account.</p>
+        {authError && <div className="alert error" role="alert">{authError}</div>}
+        <form className="form-stack" onSubmit={saveRecoveredPassword}>
+          <label>New password<input type="password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)} autoComplete="new-password" minLength={8} required placeholder="At least 8 characters"/></label>
+          <div className="password-strength"><div className="strength-heading"><span>Password strength</span><strong data-strength={assessPassword(resetPassword).label.toLowerCase()}>{assessPassword(resetPassword).label}</strong></div><div className="strength-meter" role="img" aria-label={"Password strength: " + assessPassword(resetPassword).label}>{[1,2,3,4,5].map(level=><span key={level} className={assessPassword(resetPassword).score>=level?"filled":""} data-strength={assessPassword(resetPassword).label.toLowerCase()}/>)}</div><p>{assessPassword(resetPassword).feedback.join(" · ") || "Use a unique password for this account."}</p></div>
+          <label>Confirm new password<input type="password" value={resetConfirmPassword} onChange={e=>setResetConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required placeholder="Enter it again"/><span className={resetConfirmPassword.length===0?"field-help":resetConfirmPassword===resetPassword?"field-help match":"field-help mismatch"}>{resetConfirmPassword.length===0?"Confirm your new password.":resetConfirmPassword===resetPassword?"Passwords match.":"Passwords do not match."}</span></label>
+          <button className="button primary full" type="submit" disabled={passwordSaving}>{passwordSaving?"Updating password…":"Save new password"} <ArrowRight size={17}/></button>
+        </form></div></section>
+    </main>
+  );
   if (!session) return (
     <main className="auth-layout" data-theme={theme}>
       <section className="auth-story">
@@ -387,6 +478,7 @@ export default function App() {
               <p>{passwordStrength.feedback.length ? passwordStrength.feedback.join(" · ") : "Good mix. Consider using a unique passphrase you don't use elsewhere."}</p>
             </div>}
           </label>
+          {authMode === "signin" && <button type="button" className="text-button forgot-link" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }}>Forgot password?</button>}
           {authMode === "signup" && <label>Confirm password<input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} placeholder="Enter the same password again" required aria-invalid={confirmPassword.length > 0 && confirmPassword !== password} aria-describedby="confirm-password-help" />
             <span className={confirmPassword.length === 0 ? "field-help" : confirmPassword === password ? "field-help match" : "field-help mismatch"} id="confirm-password-help">{confirmPassword.length === 0 ? "Re-enter your password to confirm it." : confirmPassword === password ? "Passwords match." : "Passwords do not match yet."}</span>
           </label>}
@@ -429,6 +521,7 @@ export default function App() {
 
   return (
     <div className="app-frame" data-theme={theme}>
+      {!isOnline && <div className="offline-banner" role="status"><strong>You’re offline.</strong> Kwacha Sales can open, but saving sales, products, returns, and receipts requires an internet connection. Reconnect before recording transactions.</div>}
       <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
         <a className="brand" href="#dashboard"><span className="brand-mark"><Store size={20} /></span><span>Kwacha Sales<span className="brand-period">.</span></span></a>
         <div className="business-switch"><span className="business-avatar">{business.name.slice(0,1).toUpperCase()}</span><span className="business-meta"><strong>{business.name}</strong><small>Business workspace</small></span><ChevronDown size={15} /></div>
@@ -448,7 +541,15 @@ export default function App() {
           {page === "Returns" && <><div className="section-intro"><div><p className="eyebrow">RETURNS LOG</p><h2>Keep returns transparent</h2><p className="muted">Returns are recorded separately and do not silently reduce sales totals.</p></div></div><div className="split-layout"><section className="panel"><div className="panel-heading"><div><h3>Record a return</h3><p>Document returned goods.</p></div></div>{products.length ? <form className="form-stack" onSubmit={addReturn}><label>Product<select value={returnProduct} onChange={e => setReturnProduct(e.target.value)} required><option value="">Choose a product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="form-two"><label>Quantity returned<input type="number" min="0.001" step="0.001" value={returnQuantity} onChange={e => setReturnQuantity(e.target.value)} required /></label><label>Return date<input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} required /></label></div><label>Recorded by<input value={employeeName} onChange={e => setEmployeeName(e.target.value)} required /></label><label>Reason <span className="optional">(optional)</span><textarea rows={2} value={returnReason} onChange={e => setReturnReason(e.target.value)} placeholder="e.g. Damaged packaging" /></label><button className="button primary"><Plus size={16}/> Save return</button></form> : <EmptyState icon={Package} title="Add a product first" description="Returns are linked to products in your catalogue." action="Go to products" onAction={() => setPage("Products")} />}</section><section className="panel"><div className="panel-heading"><div><h3>Returns history</h3><p>{returns.length} return entries</p></div></div>{returns.length ? <div className="table-wrap"><table><thead><tr><th>Product</th><th>Date</th><th>Quantity</th><th>Reason</th></tr></thead><tbody>{returns.map(r => <tr key={r.id}><td><strong>{r.products?.name ?? "Product"}</strong><small>{r.employee_name}</small></td><td>{readableDate(r.returned_on)}</td><td>{r.quantity}</td><td>{r.reason || "—"}</td></tr>)}</tbody></table></div> : <EmptyState icon={RotateCcw} title="No returns recorded" description="Any returns you record will appear here." />}</section></div></>}
           {page === "Receipts" && <><div className="section-intro"><div><p className="eyebrow">PAYMENT RECORDS</p><h2>Receipts</h2><p className="muted">Receipts are stored separately and do not create extra sales or change report totals.</p></div></div><section className="panel"><div className="panel-heading"><div><h3>Issued receipts</h3><p>{receipts.length} {receipts.length===1?"receipt":"receipts"} saved</p></div></div>{receipts.length?<div className="table-wrap"><table><thead><tr><th>Receipt</th><th>Date</th><th>Total</th><th>Received</th><th>Change</th><th>Print</th></tr></thead><tbody>{receipts.map(receipt=><tr key={receipt.id}><td><strong>{receipt.receipt_number}</strong></td><td>{readableDate(receipt.created_at.slice(0,10))}</td><td className="numeric">{money(Number(receipt.total_amount),business.currency_code)}</td><td className="numeric">{money(Number(receipt.amount_received),business.currency_code)}</td><td className="numeric">{money(Number(receipt.change_due),business.currency_code)}</td><td><button className="button secondary small-button" onClick={()=>printReceipt(receipt)}><ReceiptText size={15}/> Print</button></td></tr>)}</tbody></table></div>:<EmptyState icon={ReceiptText} title="No receipts yet" description="Turn on “Create a receipt” while recording a sale to save a receipt here." action="Record a sale" onAction={()=>setPage("Sales")}/>}</section></>}
           {page === "Reports" && <><div className="section-intro"><div><p className="eyebrow">SALES INSIGHTS</p><h2>Reports that answer real questions</h2><p className="muted">Choose a period to summarise saved sales and returns.</p></div><button className="button secondary" onClick={downloadReport}><Download size={16}/> Download TXT</button></div><section className="panel report-controls"><label>Report period<select value={reportPeriod} onChange={e => setReportPeriod(e.target.value as typeof reportPeriod)}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label><label>Choose a date<input type="date" value={reportDate} onChange={e => setReportDate(e.target.value)} /></label><div className="period-caption"><CalendarDays size={16}/> {readableDate(reportRows.start)} – {readableDate(reportRows.end)}</div></section><div className="metric-grid report-metrics"><Metric icon={TrendingUp} label="Sales value" value={money(reportValue,business.currency_code)} hint="Before returns" tone="accent"/><Metric icon={ShoppingBag} label="Units sold" value={reportUnits.toLocaleString()} hint="Recorded quantities" tone="blue"/><Metric icon={RotateCcw} label="Returned units" value={reportRows.returns.reduce((sum,r)=>sum+Number(r.quantity||0),0).toLocaleString()} hint="Listed separately" tone="orange"/></div><section className="panel"><div className="panel-heading"><div><h3>Sales by product</h3><p>{new Set(reportRows.sales.map(s => s.transaction_id || s.id)).size} transactions in this period</p></div></div>{reportRows.products.length ? <div className="table-wrap"><table><thead><tr><th>Product</th><th>Units sold</th><th>Sales value</th></tr></thead><tbody>{reportRows.products.map(p=><tr key={p.name}><td><strong>{p.name}</strong></td><td>{p.units}</td><td className="numeric">{money(p.value,business.currency_code)}</td></tr>)}</tbody></table></div> : <EmptyState icon={BarChart3} title="Nothing to report yet" description="Once sales are recorded in this period, the report will appear here."/>}</section><p className="report-footnote">Reports are calculated from saved transactions. Returns are shown separately and are not deducted from sales.</p></>}
-          {page === "Settings" && <><div className="section-intro"><div><p className="eyebrow">YOUR PREFERENCES</p><h2>Make Kwacha Sales feel like yours</h2><p className="muted">Choose the appearance that feels right for your workspace.</p></div></div><section className="panel settings-panel"><div className="panel-heading"><div><h3>Appearance</h3><p>Your theme is saved in this browser.</p></div></div><div className="theme-grid">{([{id:"light",name:"Light",description:"Bright and clean",icon:Sun},{id:"dark",name:"Dark",description:"Low-light comfort",icon:Moon},{id:"graphite",name:"Graphite",description:"Quiet, modern neutrals",icon:Activity},{id:"green",name:"Evergreen",description:"A natural green accent",icon:Leaf}] as const).map(t => { const Icon=t.icon; return <button key={t.id} className={theme===t.id?"theme-card selected":"theme-card"} onClick={()=>setTheme(t.id)}><span className={"theme-swatch "+t.id}><Icon size={20}/></span><span className="theme-card-copy"><strong>{t.name}</strong><small>{t.description}</small></span>{theme===t.id&&<Check className="theme-check" size={17}/>}</button>; })}</div></section><section className="panel account-settings"><div className="panel-heading"><div><h3>Business details</h3><p>Workspace information</p></div></div><div className="detail-row"><span>Business name</span><strong>{business.name}</strong></div><div className="detail-row"><span>Currency</span><strong>{business.currency_code}</strong></div><div className="detail-row"><span>Signed in as</span><strong>{session.user.email}</strong></div><div className="detail-row"><span>Inventory tracking</span><span className="status-pill">Optional module · not enabled</span></div><p className="field-note">The product catalogue works without stock counts. We'll add the optional stock tracking workflow separately so it never blocks sales entry.</p></section></>}
+          {page === "Settings" && <><div className="section-intro"><div><p className="eyebrow">YOUR PREFERENCES</p><h2>Make Kwacha Sales feel like yours</h2><p className="muted">Choose the appearance that feels right for your workspace.</p></div></div><section className="panel settings-panel"><div className="panel-heading"><div><h3>Appearance</h3><p>Your theme is saved in this browser.</p></div></div><div className="theme-grid">{([{id:"light",name:"Light",description:"Bright and clean",icon:Sun},{id:"dark",name:"Dark",description:"Low-light comfort",icon:Moon},{id:"graphite",name:"Graphite",description:"Quiet, modern neutrals",icon:Activity},{id:"green",name:"Evergreen",description:"A natural green accent",icon:Leaf}] as const).map(t => { const Icon=t.icon; return <button key={t.id} className={theme===t.id?"theme-card selected":"theme-card"} onClick={()=>setTheme(t.id)}><span className={"theme-swatch "+t.id}><Icon size={20}/></span><span className="theme-card-copy"><strong>{t.name}</strong><small>{t.description}</small></span>{theme===t.id&&<Check className="theme-check" size={17}/>}</button>; })}</div></section><section className="panel password-settings"><div className="panel-heading"><div><h3>Change password</h3><p>Confirm your current password before saving a new one.</p></div></div>
+<form className="form-stack password-change-form" onSubmit={changeAccountPassword}>
+  <label>Current password<input type="password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} autoComplete="current-password" required/></label>
+  <label>New password<input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} autoComplete="new-password" minLength={8} required/></label>
+  <div className="password-strength"><div className="strength-heading"><span>Password strength</span><strong data-strength={assessPassword(newPassword).label.toLowerCase()}>{assessPassword(newPassword).label}</strong></div><div className="strength-meter" role="img" aria-label={"Password strength: " + assessPassword(newPassword).label}>{[1,2,3,4,5].map(level=><span key={level} className={assessPassword(newPassword).score>=level?"filled":""} data-strength={assessPassword(newPassword).label.toLowerCase()}/>)}</div><p>{assessPassword(newPassword).feedback.join(" · ") || "Use a unique password for this account."}</p></div>
+  <label>Confirm new password<input type="password" value={confirmNewPassword} onChange={e=>setConfirmNewPassword(e.target.value)} autoComplete="new-password" minLength={8} required/><span className={confirmNewPassword.length===0?"field-help":confirmNewPassword===newPassword?"field-help match":"field-help mismatch"}>{confirmNewPassword.length===0?"Enter your new password again.":confirmNewPassword===newPassword?"Passwords match.":"Passwords do not match."}</span></label>
+  <button className="button primary" type="submit" disabled={passwordSaving}>{passwordSaving?"Changing password…":"Change password"} <ArrowRight size={16}/></button>
+</form></section>
+<section className="panel account-settings"><div className="panel-heading"><div><h3>Business details</h3><p>Workspace information</p></div></div><div className="detail-row"><span>Business name</span><strong>{business.name}</strong></div><div className="detail-row"><span>Currency</span><strong>{business.currency_code}</strong></div><div className="detail-row"><span>Signed in as</span><strong>{session.user.email}</strong></div><div className="detail-row"><span>Inventory tracking</span><span className="status-pill">Optional module · not enabled</span></div><p className="field-note">The product catalogue works without stock counts. We'll add the optional stock tracking workflow separately so it never blocks sales entry.</p></section></>}
           <footer className="content-footer"><span>Kwacha Sales · A clearer view of your business</span><span><ShieldCheck size={14}/> Your records are synced to your workspace</span></footer>
         </div>
       </main>

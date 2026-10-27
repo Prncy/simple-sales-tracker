@@ -1,0 +1,19 @@
+{
+  "name": "Kwacha Sales",
+  "short_name": "Kwacha Sales",
+  "description": "Simple sales. Clear numbers.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#17191d",
+  "theme_color": "#0d3328",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
