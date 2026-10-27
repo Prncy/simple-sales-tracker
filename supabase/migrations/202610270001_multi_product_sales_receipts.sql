@@ -149,4 +149,5 @@ begin
   return jsonb_build_object('transaction_id', v_transaction_id, 'total_amount', v_total, 'receipt_id', v_receipt_id, 'receipt_number', v_receipt_number);
 end;
 $$;
+revoke all on function public.create_sale_with_receipt(uuid, text, date, text, jsonb, boolean, numeric) from public, anon;
 grant execute on function public.create_sale_with_receipt(uuid, text, date, text, jsonb, boolean, numeric) to authenticated;
