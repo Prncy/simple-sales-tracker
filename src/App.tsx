@@ -51,7 +51,7 @@ async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseL
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem("stockwise-theme");
+    const saved = localStorage.getItem("kwacha-sales-theme") ?? localStorage.getItem("stockwise-theme");
     return saved === "light" || saved === "dark" || saved === "green" || saved === "graphite" ? saved : "graphite";
   });
   const [session, setSession] = useState<any>(null);
@@ -152,7 +152,7 @@ export default function App() {
   }, [business?.id]);
 
   useEffect(() => {
-    localStorage.setItem("stockwise-theme", theme);
+    localStorage.setItem("kwacha-sales-theme", theme);
   }, [theme]);
 
   const groupedSales = useMemo(() => groupSales(sales), [sales]);
