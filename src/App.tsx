@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import {
   Activity, ArrowDownLeft, ArrowRight, BarChart3, CalendarDays, Check,
   ChevronDown, CircleHelp, ClipboardList, Download, LayoutDashboard, LogOut,
@@ -19,7 +20,8 @@ const pages: { name: Page; icon: typeof LayoutDashboard }[] = [
   { name: "Products", icon: Package }, { name: "Returns", icon: RotateCcw },
   { name: "Reports", icon: BarChart3 }, { name: "Settings", icon: Settings }
 ];
-const today = () => new Date().toISOString().slice(0, 10);
+const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const today = () => dateKey(new Date());
 const money = (value: number, currency = "ZMW") => new Intl.NumberFormat("en-ZM", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0));
 const readableDate = (value: string) => value ? new Date(value + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
 
@@ -95,8 +97,8 @@ export default function App() {
     (async () => {
       const [productResult, saleResult, returnResult] = await Promise.all([
         supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-        supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).limit(1000),
-        supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).limit(1000)
+        supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).limit(1000),
+        supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).limit(1000)
       ]);
       if (cancelled) return;
       const queryError = productResult.error || saleResult.error || returnResult.error;
@@ -123,10 +125,10 @@ export default function App() {
       const day = (selected.getDay() + 6) % 7;
       const monday = new Date(selected); monday.setDate(selected.getDate() - day);
       const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-      start = monday.toISOString().slice(0, 10); end = sunday.toISOString().slice(0, 10);
+      start = dateKey(monday); end = dateKey(sunday);
     } else if (reportPeriod === "monthly") {
-      start = new Date(selected.getFullYear(), selected.getMonth(), 1).toISOString().slice(0, 10);
-      end = new Date(selected.getFullYear(), selected.getMonth() + 1, 0).toISOString().slice(0, 10);
+      start = dateKey(new Date(selected.getFullYear(), selected.getMonth(), 1));
+      end = dateKey(new Date(selected.getFullYear(), selected.getMonth() + 1, 0));
     } else if (reportPeriod === "yearly") {
       start = selected.getFullYear() + "-01-01"; end = selected.getFullYear() + "-12-31";
     }
