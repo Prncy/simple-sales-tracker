@@ -52,3 +52,11 @@ if (root) {
 } else {
   document.body.innerHTML = "<main style='font-family:system-ui;padding:2rem'>Stockwise could not find its app root. Please reload the page.</main>";
 }
+
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch((error) => {
+      console.warn("Kwacha Sales offline support could not be registered:", error);
+    });
+  });
+}
