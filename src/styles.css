@@ -343,3 +343,49 @@ td.numeric { color: var(--text); font-weight: 700; text-align: right; }
   .sale-line .form-two label { min-width: 0; }
   .sale-line input { min-width: 0; }
 }
+
+
+/* Signup password guidance and legal documents */
+.auth-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; justify-content: space-between; }
+.legal-footer-links { display: flex; gap: 14px; }
+.legal-footer-links button, .inline-legal-link { padding: 0; border: 0; background: none; color: var(--blue); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.legal-footer-links button { font-size: 11px; }
+.inline-legal-link { font-weight: 700; }
+.password-strength { display: grid; gap: 7px; margin-top: 1px; font-weight: 400; }
+.strength-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 11px; color: var(--muted); }
+.strength-heading strong { font-size: 11px; color: var(--muted); }
+.strength-heading strong[data-strength="weak"] { color: #e07878; }
+.strength-heading strong[data-strength="fair"] { color: var(--orange); }
+.strength-heading strong[data-strength="good"], .strength-heading strong[data-strength="strong"] { color: var(--good); }
+.strength-meter { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.strength-meter span { height: 4px; border-radius: 99px; background: var(--line); }
+.strength-meter span.filled[data-strength="weak"] { background: #d75d5d; }
+.strength-meter span.filled[data-strength="fair"] { background: var(--orange); }
+.strength-meter span.filled[data-strength="good"], .strength-meter span.filled[data-strength="strong"] { background: var(--good); }
+.password-strength p, .field-help { margin: 0; color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.5; }
+.field-help.match { color: var(--good); }
+.field-help.mismatch { color: #e07878; }
+.terms-consent { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 10px; align-items: start; }
+.terms-consent > input { appearance: auto; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--good); }
+.terms-consent > label { display: block; font-weight: 400; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.legal-overlay { position: fixed; inset: 0; z-index: 1000; padding: 24px; display: grid; place-items: center; background: rgba(5, 9, 14, .72); backdrop-filter: blur(5px); }
+.legal-dialog { width: min(760px, 100%); max-height: min(86vh, 900px); display: flex; flex-direction: column; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 90px rgba(0,0,0,.38); overflow: hidden; }
+.legal-dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; padding: 23px 26px 18px; border-bottom: 1px solid var(--line); }
+.legal-dialog-header .eyebrow { margin: 0 0 8px; font-size: 10px; }
+.legal-dialog-header h2 { margin: 0; font-family: Manrope, sans-serif; font-size: 25px; letter-spacing: -.7px; }
+.legal-close { flex: 0 0 36px; width: 36px; height: 36px; display: grid; place-items: center; color: var(--muted); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 10px; }
+.legal-document { overflow-y: auto; padding: 8px 26px 24px; line-height: 1.7; font-size: 13px; color: var(--muted); }
+.legal-document h3 { color: var(--text); font-family: Manrope, sans-serif; font-size: 14px; margin: 22px 0 6px; }
+.legal-document p { margin: 12px 0; }
+.legal-document strong { color: var(--text); }
+.legal-dialog-footer { padding: 14px 26px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .auth-form-panel { padding: 32px 22px; }
+  .auth-footer { align-items: flex-start; flex-direction: column; }
+  .legal-overlay { padding: 10px; }
+  .legal-dialog { max-height: 92vh; border-radius: 14px; }
+  .legal-dialog-header { padding: 18px 17px 14px; }
+  .legal-dialog-header h2 { font-size: 21px; }
+  .legal-document { padding: 5px 17px 18px; font-size: 12px; }
+  .legal-dialog-footer { padding: 12px 17px; }
+}
