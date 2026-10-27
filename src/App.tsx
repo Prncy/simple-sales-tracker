@@ -49,6 +49,27 @@ async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseL
   }
 }
 
+type LegalPage = "terms" | "privacy" | null;
+type PasswordStrength = { score: number; label: string; feedback: string[] };
+function assessPassword(value: string): PasswordStrength {
+  const checks = [
+    value.length >= 8,
+    value.length >= 12,
+    /[a-z]/.test(value) && /[A-Z]/.test(value),
+    /\d/.test(value),
+    /[^A-Za-z0-9]/.test(value)
+  ];
+  const score = checks.filter(Boolean).length;
+  const label = !value ? "Not entered" : score <= 2 ? "Weak" : score === 3 ? "Fair" : score === 4 ? "Good" : "Strong";
+  const feedback: string[] = [];
+  if (value.length < 8) feedback.push("Use at least 8 characters");
+  else if (value.length < 12) feedback.push("A longer password (12+ characters) is safer");
+  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value)) feedback.push("Mix uppercase and lowercase letters");
+  if (!/\d/.test(value)) feedback.push("Add a number");
+  if (!/[^A-Za-z0-9]/.test(value)) feedback.push("Add a symbol");
+  return { score, label, feedback };
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("kwacha-sales-theme") ?? localStorage.getItem("stockwise-theme");
@@ -60,6 +81,10 @@ export default function App() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [legalPage, setLegalPage] = useState<LegalPage>(null);
+  const passwordStrength = assessPassword(password);
   const [authError, setAuthError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [business, setBusiness] = useState<Business | null>(null);
@@ -189,6 +214,11 @@ export default function App() {
   async function handleAuth(event: FormEvent) {
     event.preventDefault(); setAuthError(""); setAuthMessage("");
     if (!supabase) return;
+    if (authMode === "signup") {
+      if (password !== confirmPassword) { setAuthError("Your passwords don't match yet."); return; }
+      if (passwordStrength.score < 3 || password.length < 8) { setAuthError("Please choose a stronger password before creating your account."); return; }
+      if (!termsAccepted) { setAuthError("Please agree to the Terms of Use and acknowledge the Privacy Policy to continue."); return; }
+    }
     setAuthLoading(true);
     try {
       if (authMode === "signup") {
@@ -341,19 +371,56 @@ export default function App() {
       <section className="auth-story">
         <a className="brand" href="#home"><span className="brand-mark"><Store size={20} /></span><span>Kwacha Sales<span className="brand-period">.</span></span></a>
         <div className="auth-story-copy"><span className="eyebrow"><span className="eyebrow-dot" /> SMALL BUSINESS, CLEARER NUMBERS</span><h1>Know your sales.<br /><span>Run your business.</span></h1><p>A straightforward place to record sales, keep product details, and understand how your business is doing.</p><div className="story-points"><span><Check size={16} /> Simple sales records</span><span><Check size={16} /> Reports when you need them</span><span><ShieldCheck size={16} /> Your business data stays yours</span></div></div>
-        <p className="auth-footer">Made for everyday business · Kwacha Sales © 2026</p>
+        <div className="auth-footer"><span>Made for everyday business · Kwacha Sales © 2026</span><span className="legal-footer-links"><button type="button" onClick={() => setLegalPage("terms")}>Terms of Use</button><button type="button" onClick={() => setLegalPage("privacy")}>Privacy Policy</button></span></div>
       </section>
       <section className="auth-form-panel" id="home"><div className="auth-card">
-        <div className="auth-tabs"><button className={authMode === "signup" ? "selected" : ""} onClick={() => { setAuthMode("signup"); setAuthError(""); setAuthMessage(""); }}>Create account</button><button className={authMode === "signin" ? "selected" : ""} onClick={() => { setAuthMode("signin"); setAuthError(""); setAuthMessage(""); }}>Sign in</button></div>
+        <div className="auth-tabs"><button type="button" className={authMode === "signup" ? "selected" : ""} onClick={() => { setAuthMode("signup"); setAuthError(""); setAuthMessage(""); setConfirmPassword(""); setTermsAccepted(false); }}>Create account</button><button type="button" className={authMode === "signin" ? "selected" : ""} onClick={() => { setAuthMode("signin"); setAuthError(""); setAuthMessage(""); setConfirmPassword(""); setTermsAccepted(false); }}>Sign in</button></div>
         <p className="eyebrow">{authMode === "signup" ? "GET STARTED" : "WELCOME BACK"}</p><h2>{authMode === "signup" ? "Build a clearer picture." : "Good to see you again."}</h2><p className="muted">{authMode === "signup" ? "Create an account to set up your business workspace." : "Sign in to continue to your business."}</p>
         {authError && <div className="alert error" role="alert">{authError}</div>}{authMessage && <div className="alert success" role="status">{authMessage}</div>}
         <form className="form-stack" onSubmit={handleAuth}>
           {authMode === "signup" && <label>Full name<input value={fullName} onChange={e => setFullName(e.target.value)} autoComplete="name" placeholder="Your name" required /></label>}
           <label>Email address<input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" required /></label>
-          <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={8} placeholder="At least 8 characters" required /></label>
+          <label>Password<input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={8} placeholder="At least 8 characters" required aria-describedby={authMode === "signup" ? "password-strength-help" : undefined} />
+            {authMode === "signup" && <div className="password-strength" id="password-strength-help" aria-live="polite">
+              <div className="strength-heading"><span>Password strength</span><strong data-strength={passwordStrength.label.toLowerCase().replace(" ", "-")}>{passwordStrength.label}</strong></div>
+              <div className="strength-meter" role="img" aria-label={`Password strength: ${passwordStrength.label}`}>{[1,2,3,4,5].map(level => <span key={level} className={passwordStrength.score >= level ? "filled" : ""} data-strength={passwordStrength.label.toLowerCase().replace(" ", "-")} />)}</div>
+              <p>{passwordStrength.feedback.length ? passwordStrength.feedback.join(" · ") : "Good mix. Consider using a unique passphrase you don't use elsewhere."}</p>
+            </div>}
+          </label>
+          {authMode === "signup" && <label>Confirm password<input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} placeholder="Enter the same password again" required aria-invalid={confirmPassword.length > 0 && confirmPassword !== password} aria-describedby="confirm-password-help" />
+            <span className={confirmPassword.length === 0 ? "field-help" : confirmPassword === password ? "field-help match" : "field-help mismatch"} id="confirm-password-help">{confirmPassword.length === 0 ? "Re-enter your password to confirm it." : confirmPassword === password ? "Passwords match." : "Passwords do not match yet."}</span>
+          </label>}
+          {authMode === "signup" && <div className="terms-consent"><input id="terms-accepted" type="checkbox" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} required /><label htmlFor="terms-accepted">I agree to the <button type="button" className="inline-legal-link" onClick={() => setLegalPage("terms")}>Terms of Use</button> and acknowledge the <button type="button" className="inline-legal-link" onClick={() => setLegalPage("privacy")}>Privacy Policy</button>.</label></div>}
           <button className="button primary full" type="submit" disabled={authLoading}>{authLoading ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <ArrowRight size={17} /></button>
         </form><p className="privacy-note"><ShieldCheck size={15} /> Your password is handled securely by Supabase Auth.</p>
       </div><div className="theme-mini"><span>Appearance</span>{(["light","dark","graphite","green"] as Theme[]).map(t => <button key={t} className={theme === t ? "theme-dot selected" : "theme-dot"} data-theme-choice={t} aria-label={t + " theme"} title={t} onClick={() => setTheme(t)} />)}</div></section>
+      {legalPage && <div className="legal-overlay" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setLegalPage(null); }}><section className="legal-dialog" role="dialog" aria-modal="true" aria-labelledby="legal-dialog-title"><header className="legal-dialog-header"><div><p className="eyebrow">KWACHA SALES · LAST UPDATED 27 OCTOBER 2026</p><h2 id="legal-dialog-title">{legalPage === "terms" ? "Terms of Use" : "Privacy Policy"}</h2></div><button type="button" className="legal-close" aria-label="Close document" onClick={() => setLegalPage(null)}><X size={19} /></button></header>
+        <div className="legal-document">
+          {legalPage === "terms" ? <>
+            <p>These Terms of Use explain the conditions for using Kwacha Sales. By creating an account or using the service, you agree to these terms. If you do not agree, do not use the service.</p>
+            <h3>1. The service</h3><p>Kwacha Sales provides tools for recording product sales, products, returns and receipts, and viewing business reports. Features may change as the service develops. We may temporarily suspend access for maintenance, security, or operational reasons.</p>
+            <h3>2. Your account</h3><p>Provide accurate registration information, keep your sign-in credentials confidential, and tell us promptly if you suspect unauthorized access. You are responsible for activity carried out through your account, except where applicable law says otherwise. You must be legally able to enter into these terms.</p>
+            <h3>3. Business records and acceptable use</h3><p>You are responsible for the accuracy and lawfulness of the information you enter, including product prices, sales, returns, employee details, and receipt amounts. Only enter personal information you are authorized to use. Do not misuse the service, attempt unauthorized access, interfere with its operation, or use it for unlawful activity.</p>
+            <h3>4. Reports and financial decisions</h3><p>Reports and totals are provided as record-keeping aids. They are not accounting, tax, legal, or financial advice and may be affected by incorrect or incomplete entries. You remain responsible for checking your records and meeting your tax, accounting, consumer-protection, and other legal obligations.</p>
+            <h3>5. Data, backups and security</h3><p>We use access controls intended to keep business records available only to authorized users. No online service can promise perfect security or uninterrupted availability. You should keep any additional records or backups you need for your business.</p>
+            <h3>6. Availability and changes</h3><p>We aim to keep the service useful and reliable, but provide it on an evolving basis. Features may be updated, discontinued, or temporarily unavailable. We will make reasonable efforts to communicate material changes where appropriate.</p>
+            <h3>7. Disclaimer and liability</h3><p>To the extent permitted by applicable law, the service is provided without a guarantee that it will be error-free or always available. Nothing in these terms excludes a right or liability that cannot lawfully be excluded. To the extent permitted by law, Kwacha Sales is not responsible for indirect losses arising from reliance on inaccurate entries, interruptions, or inability to use the service.</p>
+            <h3>8. Suspension and termination</h3><p>You may stop using the service at any time. We may restrict or suspend access where reasonably necessary to protect users, investigate abuse, comply with law, or address a serious breach of these terms.</p>
+            <h3>9. Privacy and updates</h3><p>Our Privacy Policy explains how information is handled. We may update these terms as the service changes. Continued use after an update takes effect means you accept the revised terms where permitted by law.</p>
+            <h3>10. Applicable law and contact</h3><p>These terms are subject to applicable laws of Zambia and any mandatory consumer protections that apply to you. For questions about these terms, contact the Kwacha Sales service operator through the contact channel provided to you for this service.</p>
+          </> : <>
+            <p>This Privacy Policy describes how Kwacha Sales handles information when you create an account and use the service.</p>
+            <h3>1. Information we collect</h3><p><strong>Account information:</strong> your email address, account identifier, and the name you provide. <strong>Business information:</strong> business name, product catalogue, prices, sales, quantities, returns, employee names entered into records, receipt totals, amounts received, and change due. <strong>Technical and security information:</strong> authentication/session data managed by our identity provider and limited database security counters used to control repeated write requests.</p>
+            <h3>2. How information is used</h3><p>We use this information to create and secure accounts, provide sales tracking and reporting, save business records, generate receipts, troubleshoot issues, prevent abuse, and maintain the service. We do not use your sales records to provide personalized advertising in this version of the service.</p>
+            <h3>3. Where information is stored and service providers</h3><p>Account and business data are stored using Supabase authentication and database infrastructure. The web application is hosted using GitHub Pages. These providers process technical information as needed to deliver their services and may process or store information in locations outside Zambia. Their own terms and privacy practices may also apply.</p>
+            <h3>4. Sharing</h3><p>We do not sell your personal information. Information may be processed by the providers described above, disclosed when required by law, or shared where reasonably necessary to protect the service, its users, or legal rights. Business records should only be accessible to authorized users under the configured access controls.</p>
+            <h3>5. Security</h3><p>We use measures such as authenticated access, database access policies, and request limits intended to protect information. No security measure is perfect, so avoid storing sensitive information that the service does not need and protect your account credentials.</p>
+            <h3>6. Retention and your choices</h3><p>We retain account and business information while needed to operate the service, maintain business records, resolve disputes, and meet legal obligations. The current app may not provide an in-app account deletion feature. To request access, correction, or deletion, contact the Kwacha Sales service operator through the contact channel provided to you. Some information may need to be retained where the law permits or requires it.</p>
+            <h3>7. Children</h3><p>Kwacha Sales is intended for business users and is not designed for children to create accounts independently.</p>
+            <h3>8. Changes and privacy rights</h3><p>This policy may be updated as the service changes. Depending on applicable law, you may have rights to access, correct, object to certain processing, or request deletion of your personal information. We will handle requests in accordance with applicable law, including relevant Zambian data-protection requirements.</p>
+            <h3>9. Contact</h3><p>For privacy questions or requests, contact the Kwacha Sales service operator through the contact channel provided to you for this service. Before public launch, the operator should publish a monitored privacy contact address.</p>
+          </>}
+        </div><footer className="legal-dialog-footer"><button type="button" className="button primary" onClick={() => setLegalPage(null)}>Close</button></footer></section></div>}
     </main>
   );
 
