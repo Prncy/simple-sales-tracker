@@ -311,3 +311,35 @@ td.numeric { color: var(--text); font-weight: 700; text-align: right; }
   .metric-value { font-size: 18px; }
   .topbar h1 { font-size: 13px; }
 }
+
+
+/* Multi-item sales and receipt controls */
+.sale-lines { display: grid; gap: 12px; }
+.sale-line { padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); display: grid; gap: 13px; min-width: 0; }
+.sale-line-heading { display: flex; align-items: center; justify-content: space-between; color: var(--text); }
+.sale-line-heading strong { font-size: 13px; }
+.remove-line { width: 32px; height: 32px; flex: 0 0 auto; }
+.sale-line-total, .change-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+.sale-line-total strong, .change-summary strong { color: var(--text); font-size: 14px; }
+.add-line-button { align-self: flex-start; }
+.receipt-option { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); }
+.receipt-toggle { display: flex; align-items: center; gap: 12px; padding: 15px; cursor: pointer; }
+.receipt-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.toggle-track { width: 38px; height: 22px; flex: 0 0 38px; border-radius: 999px; background: var(--line); position: relative; transition: background .18s ease; }
+.toggle-track::after { content: ""; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; border-radius: 50%; background: var(--surface); transition: transform .18s ease; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.receipt-toggle input:checked + .toggle-track { background: var(--good); }
+.receipt-toggle input:checked + .toggle-track::after { transform: translateX(16px); background: #fff; }
+.receipt-toggle input:focus-visible + .toggle-track { outline: 2px solid var(--accent); outline-offset: 3px; }
+.receipt-toggle > span:last-child { display: grid; gap: 3px; }
+.receipt-toggle strong { color: var(--text); font-size: 13px; }
+.receipt-toggle small { color: var(--muted); line-height: 1.4; font-size: 12px; }
+.receipt-payment-fields { padding: 0 15px 15px; display: grid; gap: 12px; }
+.receipt-payment-fields .field-note { margin: 0; }
+.change-summary { border-radius: 10px; padding: 12px; background: var(--surface-soft); }
+.small-button { min-height: 34px; padding: 7px 10px; font-size: 12px; gap: 6px; }
+@media (max-width: 520px) {
+  .sale-line { padding: 12px; }
+  .sale-line .form-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .sale-line .form-two label { min-width: 0; }
+  .sale-line input { min-width: 0; }
+}
