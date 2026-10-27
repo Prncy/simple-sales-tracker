@@ -78,6 +78,13 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState<"signup" | "signin">("signup");
+  const [authScreen, setAuthScreen] = useState<"auth" | "forgot" | "reset">(() => new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type") === "recovery" ? "reset" : "auth");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -124,6 +131,7 @@ export default function App() {
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const callbackError = queryParams.get("error_description") || hashParams.get("error_description") || queryParams.get("error");
     const isAuthCallback = hashParams.has("access_token") || queryParams.has("code") || queryParams.has("token_hash");
+    if (hashParams.get("type") === "recovery" || queryParams.get("type") === "recovery") setAuthScreen("reset");
     if (callbackError) setAuthError(callbackError.replace(/\+/g, " "));
     supabase.auth.getSession().then(({ data, error: sessionError }) => {
       setSession(data.session);
@@ -132,7 +140,10 @@ export default function App() {
       if (data.session && isAuthCallback) setNotice("Email confirmed successfully. Your account is ready.");
       if (isAuthCallback || callbackError) window.history.replaceState({}, document.title, window.location.pathname);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") setAuthScreen("reset");
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -237,6 +248,55 @@ export default function App() {
     finally { setAuthLoading(false); }
   }
 
+  async function requestPasswordReset(event: FormEvent) {
+    event.preventDefault(); setAuthError(""); setAuthMessage("");
+    if (!supabase) return;
+    setAuthLoading(true);
+    try {
+      const redirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      if (resetError) throw resetError;
+      setAuthMessage("If an account exists for that email, a password-reset link has been sent. Check your inbox and spam folder.");
+    } catch (e) { setAuthError(e instanceof Error ? e.message : "We couldn't send a reset link. Please try again."); }
+    finally { setAuthLoading(false); }
+  }
+
+  async function saveRecoveredPassword(event: FormEvent) {
+    event.preventDefault(); setAuthError(""); setAuthMessage("");
+    if (!supabase) return;
+    const strength = assessPassword(resetPassword);
+    if (resetPassword !== resetConfirmPassword) { setAuthError("Your passwords don't match yet."); return; }
+    if (resetPassword.length < 8 || strength.score < 3) { setAuthError("Please choose a stronger password before continuing."); return; }
+    setPasswordSaving(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password: resetPassword });
+      if (updateError) throw updateError;
+      await supabase.auth.signOut();
+      setSession(null); setPassword(""); setResetPassword(""); setResetConfirmPassword("");
+      setAuthMode("signin"); setAuthScreen("auth");
+      setAuthMessage("Your password has been reset. Sign in with your new password.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (e) { setAuthError(e instanceof Error ? e.message : "We couldn't update your password. Request a new reset link and try again."); }
+    finally { setPasswordSaving(false); }
+  }
+
+  async function changeAccountPassword(event: FormEvent) {
+    event.preventDefault(); setError(""); setNotice("");
+    if (!supabase || !session?.user?.email) return;
+    const strength = assessPassword(newPassword);
+    if (newPassword !== confirmNewPassword) { setError("Your new passwords don't match."); return; }
+    if (newPassword.length < 8 || strength.score < 3) { setError("Choose a stronger password before saving."); return; }
+    setPasswordSaving(true);
+    try {
+      const { error: verifyError } = await supabase.auth.signInWithPassword({ email: session.user.email, password: currentPassword });
+      if (verifyError) throw new Error("Your current password wasn't accepted. Please check it and try again.");
+      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      if (updateError) throw updateError;
+      setCurrentPassword(""); setNewPassword(""); setConfirmNewPassword("");
+      setNotice("Password changed successfully.");
+    } catch (e) { setError(e instanceof Error ? e.message : "We couldn't change your password. Please try again."); }
+    finally { setPasswordSaving(false); }
+  }
   async function createBusiness(event: FormEvent) {
     event.preventDefault(); setError(""); setNotice("");
     if (!supabase || !session?.user?.id) return;
