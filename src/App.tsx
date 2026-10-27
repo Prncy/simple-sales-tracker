@@ -223,14 +223,63 @@ export default function App() {
     await reloadData();
   }
 
+  function updateSaleItem(key: number, field: "product_id" | "quantity" | "unit_price", value: string) {
+    setSaleItems(items => items.map(item => {
+      if (item.key !== key) return item;
+      if (field === "product_id") {
+        const product = products.find(p => p.id === value);
+        return { ...item, product_id: value, unit_price: product ? String(product.default_unit_price) : "" };
+      }
+      return { ...item, [field]: value };
+    }));
+  }
+
+  const saleTotal = saleItems.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.unit_price) || 0), 0);
+  const changeDue = Math.max(0, (Number(amountReceived) || 0) - saleTotal);
+
   async function addSale(event: FormEvent) {
     event.preventDefault(); if (!supabase || !business) return; setError(""); setNotice("");
-    const quantity = Number(saleQuantity), price = Number(salePrice);
-    if (!saleProduct || !employeeName.trim() || quantity <= 0 || !Number.isFinite(quantity) || price < 0 || !Number.isFinite(price)) { setError("Check the product, employee name, quantity and price."); return; }
-    const { error: insertError } = await supabase.from("sales").insert({ business_id: business.id, product_id: saleProduct, recorded_by: session.user.id, employee_name: employeeName.trim(), quantity, unit_price: price, sold_on: saleDate, sold_at: new Date(saleDate + "T12:00:00").toISOString(), note: saleNote.trim() || null });
-    if (insertError) { setError(insertError.message); return; }
-    setSaleQuantity("1"); setSaleNote(""); setSaleDate(today()); setNotice("Sale recorded successfully.");
-    await reloadData();
+    const validItems = saleItems.map(item => ({ product_id: item.product_id, quantity: Number(item.quantity), unit_price: Number(item.unit_price) }));
+    if (!employeeName.trim() || validItems.some(item => !item.product_id || !Number.isFinite(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unit_price) || item.unit_price < 0)) {
+      setError("Choose a product and enter a valid quantity and unit price for every line."); return;
+    }
+    if (receiptEnabled && (!amountReceived.trim() || !Number.isFinite(Number(amountReceived)) || Number(amountReceived) < saleTotal)) {
+      setError("Amount received must be at least the overall sale total."); return;
+    }
+    setSavingSale(true);
+    try {
+      const { data, error: insertError } = await supabase.rpc("create_sale_with_receipt", {
+        p_business_id: business.id,
+        p_employee_name: employeeName.trim(),
+        p_sold_on: saleDate,
+        p_note: saleNote.trim() || null,
+        p_items: validItems,
+        p_receipt_enabled: receiptEnabled,
+        p_amount_received: receiptEnabled ? Number(amountReceived) : null
+      });
+      if (insertError) throw insertError;
+      const result = data as { receipt_number?: string | null; total_amount?: number };
+      setSaleItems([{ key: nextSaleItemKey, product_id: "", quantity: "1", unit_price: "" }]);
+      setNextSaleItemKey(key => key + 1);
+      setAmountReceived(""); setReceiptEnabled(false); setSaleNote(""); setSaleDate(today());
+      setNotice(result.receipt_number ? "Sale saved. Receipt " + result.receipt_number + " created." : "Sale recorded successfully.");
+      await reloadData();
+      if (result.receipt_number) setPage("Receipts");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save this sale. No partial sale should be recorded.");
+    } finally { setSavingSale(false); }
+  }
+
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] as string));
+
+  function printReceipt(receipt: ReceiptRecord) {
+    const transactionItems = sales.filter(s => s.transaction_id === receipt.transaction_id);
+    const popup = window.open("", "_blank", "width=420,height=720");
+    if (!popup) { setError("Allow pop-ups to print a receipt."); return; }
+    const itemRows = transactionItems.map(item => "<tr><td>" + escapeHtml(item.products?.name ?? "Product") + "<br><small>" + Number(item.quantity) + " × " + money(Number(item.unit_price), business.currency_code) + "</small></td><td style=\"text-align:right\">" + money(Number(item.total_value), business.currency_code) + "</td></tr>").join("");
+    const html = "<!doctype html><html><head><title>" + escapeHtml(receipt.receipt_number) + "</title><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>body{font:14px system-ui,sans-serif;color:#111;padding:22px;max-width:360px;margin:auto}h1{text-align:center;font-size:22px}p{text-align:center;color:#555}.line{border-top:1px dashed #888;margin:14px 0}table{width:100%;border-collapse:collapse}td{padding:8px 0;vertical-align:top}.total{font-weight:700;font-size:17px}small{color:#555}button{width:100%;padding:10px;margin-top:16px}@media print{button{display:none}}</style></head><body><h1>" + escapeHtml(business.name) + "</h1><p>SALES RECEIPT</p><div class=\"line\"></div><p>Receipt: " + escapeHtml(receipt.receipt_number) + "<br>Date: " + escapeHtml(readableDate(receipt.created_at.slice(0,10))) + "<br>Served by: " + escapeHtml(transactionItems[0]?.employee_name ?? employeeName) + "</p><div class=\"line\"></div><table>" + itemRows + "</table><div class=\"line\"></div><table><tr class=\"total\"><td>Total</td><td style=\"text-align:right\">" + money(Number(receipt.total_amount), business.currency_code) + "</td></tr><tr><td>Amount received</td><td style=\"text-align:right\">" + money(Number(receipt.amount_received), business.currency_code) + "</td></tr><tr><td>Change</td><td style=\"text-align:right\">" + money(Number(receipt.change_due), business.currency_code) + "</td></tr></table><p>Thank you for your business.</p><button onclick=\"window.print()\">Print receipt</button><script>window.onload=()=>window.print()</script></body></html>";
+    popup.document.write(html);
+    popup.document.close();
   }
 
   async function addReturn(event: FormEvent) {
@@ -245,13 +294,14 @@ export default function App() {
 
   async function reloadData() {
     if (!supabase || !business) return;
-    const [p, s, r] = await Promise.all([
+    const [p, s, r, rc] = await Promise.all([
       supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-      fetchAllRows((from, to) => supabase!.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
-      fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
+      fetchAllRows((from, to) => supabase!.from("sales").select("id,transaction_id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
+      fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to)),
+      supabase.from("receipts").select("id,transaction_id,business_id,receipt_number,total_amount,amount_received,change_due,created_at").eq("business_id", business.id).order("created_at", { ascending: false })
     ]);
-    if (p.error || s.error || r.error) setError(p.error?.message || s.error?.message || r.error?.message || "Unable to refresh data.");
-    setProducts((p.data ?? []) as Product[]); setSales((s.data ?? []) as unknown as Sale[]); setReturns((r.data ?? []) as unknown as ReturnRecord[]);
+    if (p.error || s.error || r.error || rc.error) setError(p.error?.message || s.error?.message || r.error?.message || rc.error?.message || "Unable to refresh data.");
+    setProducts((p.data ?? []) as Product[]); setSales((s.data ?? []) as unknown as Sale[]); setReturns((r.data ?? []) as unknown as ReturnRecord[]); setReceipts((rc.data ?? []) as ReceiptRecord[]);
   }
 
   async function signOut() {
