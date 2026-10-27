@@ -83,9 +83,6 @@ export default function App() {
   const [category, setCategory] = useState("General");
   const [unitLabel, setUnitLabel] = useState("unit");
   const [productPrice, setProductPrice] = useState("");
-  const [saleProduct, setSaleProduct] = useState("");
-  const [saleQuantity, setSaleQuantity] = useState("1");
-  const [salePrice, setSalePrice] = useState("");
   const [saleDate, setSaleDate] = useState(today());
   const [employeeName, setEmployeeName] = useState("");
   const [saleNote, setSaleNote] = useState("");
