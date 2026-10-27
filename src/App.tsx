@@ -426,6 +426,29 @@ export default function App() {
 
   if (!isSupabaseConfigured) return <main className="config-screen"><div className="config-card"><span className="brand-mark"><Store /></span><h1>Kwacha Sales needs its connection settings</h1><p>Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to your deployment environment. No secret service-role key belongs in the browser.</p></div></main>;
   if (authLoading) return <main className="loading-screen"><div className="loading-mark"><Store /></div><p>Getting your workspace ready…</p></main>;
+  if (authScreen === "forgot") return (
+    <main className="auth-layout" data-theme={theme}>
+      <section className="auth-story"><a className="brand" href="#home"><span className="brand-mark"><Store size={20}/></span><span>Kwacha Sales<span className="brand-period">.</span></span></a><div className="auth-story-copy"><span className="eyebrow">ACCOUNT RECOVERY</span><h1>Back to business.<br/><span>We can help.</span></h1><p>Request a secure password reset link using the email address on your account.</p></div><div className="auth-footer"><span>Kwacha Sales · Simple sales. Clear numbers.</span></div></section>
+      <section className="auth-form-panel"><div className="auth-card"><button type="button" className="text-button back-to-auth" onClick={() => { setAuthScreen("auth"); setAuthError(""); setAuthMessage(""); }}>← Back to sign in</button><p className="eyebrow">ACCOUNT RECOVERY</p><h2>Forgot your password?</h2><p className="muted">Enter your email and we will send a reset link if an account matches.</p>
+        {authError && <div className="alert error" role="alert">{authError}</div>}{authMessage && <div className="alert success" role="status">{authMessage}</div>}
+        <form className="form-stack" onSubmit={requestPasswordReset}><label>Email address<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" required/></label><button className="button primary full" type="submit" disabled={authLoading}>{authLoading?"Sending link…":"Send reset link"} <ArrowRight size={17}/></button></form>
+        <p className="privacy-note"><ShieldCheck size={15}/> For privacy, this screen will not reveal whether an account exists for that email.</p></div></section>
+    </main>
+  );
+
+  if (authScreen === "reset") return (
+    <main className="auth-layout" data-theme={theme}>
+      <section className="auth-story"><a className="brand" href="#home"><span className="brand-mark"><Store size={20}/></span><span>Kwacha Sales<span className="brand-period">.</span></span></a><div className="auth-story-copy"><span className="eyebrow">ACCOUNT SECURITY</span><h1>A fresh start.<br/><span>A stronger password.</span></h1><p>Choose a new password to get back to your business workspace.</p></div><div className="auth-footer"><span>Kwacha Sales · Simple sales. Clear numbers.</span></div></section>
+      <section className="auth-form-panel"><div className="auth-card"><p className="eyebrow">RESET PASSWORD</p><h2>Choose a new password.</h2><p className="muted">Use a strong password you do not use for another account.</p>
+        {authError && <div className="alert error" role="alert">{authError}</div>}
+        <form className="form-stack" onSubmit={saveRecoveredPassword}>
+          <label>New password<input type="password" value={resetPassword} onChange={e=>setResetPassword(e.target.value)} autoComplete="new-password" minLength={8} required placeholder="At least 8 characters"/></label>
+          <div className="password-strength"><div className="strength-heading"><span>Password strength</span><strong data-strength={assessPassword(resetPassword).label.toLowerCase()}>{assessPassword(resetPassword).label}</strong></div><div className="strength-meter" role="img" aria-label={"Password strength: " + assessPassword(resetPassword).label}>{[1,2,3,4,5].map(level=><span key={level} className={assessPassword(resetPassword).score>=level?"filled":""} data-strength={assessPassword(resetPassword).label.toLowerCase()}/>)}</div><p>{assessPassword(resetPassword).feedback.join(" · ") || "Use a unique password for this account."}</p></div>
+          <label>Confirm new password<input type="password" value={resetConfirmPassword} onChange={e=>setResetConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} required placeholder="Enter it again"/><span className={resetConfirmPassword.length===0?"field-help":resetConfirmPassword===resetPassword?"field-help match":"field-help mismatch"}>{resetConfirmPassword.length===0?"Confirm your new password.":resetConfirmPassword===resetPassword?"Passwords match.":"Passwords do not match."}</span></label>
+          <button className="button primary full" type="submit" disabled={passwordSaving}>{passwordSaving?"Updating password…":"Save new password"} <ArrowRight size={17}/></button>
+        </form></div></section>
+    </main>
+  );
   if (!session) return (
     <main className="auth-layout" data-theme={theme}>
       <section className="auth-story">
@@ -447,7 +470,7 @@ export default function App() {
               <p>{passwordStrength.feedback.length ? passwordStrength.feedback.join(" · ") : "Good mix. Consider using a unique passphrase you don't use elsewhere."}</p>
             </div>}
           </label>
-          {authMode === "signup" && <label>Confirm password<input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} placeholder="Enter the same password again" required aria-invalid={confirmPassword.length > 0 && confirmPassword !== password} aria-describedby="confirm-password-help" />
+          {authMode === "signin" && <button type="button" className="text-button forgot-link" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }}>Forgot password?</button>\n          {authMode === "signup" && <label>Confirm password<input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} placeholder="Enter the same password again" required aria-invalid={confirmPassword.length > 0 && confirmPassword !== password} aria-describedby="confirm-password-help" />
             <span className={confirmPassword.length === 0 ? "field-help" : confirmPassword === password ? "field-help match" : "field-help mismatch"} id="confirm-password-help">{confirmPassword.length === 0 ? "Re-enter your password to confirm it." : confirmPassword === password ? "Passwords match." : "Passwords do not match yet."}</span>
           </label>}
           {authMode === "signup" && <div className="terms-consent"><input id="terms-accepted" type="checkbox" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} required /><label htmlFor="terms-accepted">I agree to the <button type="button" className="inline-legal-link" onClick={() => setLegalPage("terms")}>Terms of Use</button> and acknowledge the <button type="button" className="inline-legal-link" onClick={() => setLegalPage("privacy")}>Privacy Policy</button>.</label></div>}
