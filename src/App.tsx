@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import "./auth.css";
+import Preview from "./Preview";
 import type { Session } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 import { BarChart3, LogOut, Package, Plus, ShoppingBag, ArrowDownLeft, FileText, LayoutDashboard, Download } from "lucide-react";
@@ -48,7 +49,7 @@ export default function App(){
   }catch(err){setAuthError(err instanceof Error?err.message:"Could not authenticate.");}
   finally{setAuthBusy(false);}
  }
- if(!isSupabaseConfigured)return <AuthShell title="Connect your Supabase project" message="Add the project URL and publishable key to your environment before using authentication." />;
+ if(!isSupabaseConfigured)return <Preview />;
  if(authLoading)return <AuthShell title="Loading Stockwise…" message="Checking your account session." />;
  if(!session)return <div className="auth-page"><div className="auth-card"><div className="brand-mark"><ShoppingBag size={20}/></div><div className="eyebrow">STOCK & SALES TRACKER</div><h1>{authMode==="signup"?"Create your account":"Welcome back"}</h1><p>{authMode==="signup"?"Create an employee account to start tracking business sales.":"Sign in to continue to your business workspace."}</p><form className="form-stack" onSubmit={authenticate}>{authMode==="signup"&&<label>Your name<input value={displayName} onChange={e=>setDisplayName(e.target.value)} autoComplete="name" required/></label>}<label>Email address<input type="email" value={email} onChange={e=>setEmail(e.target.value)} autoComplete="email" required/></label><label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} autoComplete={authMode==="signup"?"new-password":"current-password"} minLength={6} required/></label>{authError&&<div className="auth-error" role="alert">{authError}</div>}<button className="primary-button" disabled={authBusy}>{authBusy?"Please wait…":authMode==="signup"?"Create account":"Sign in"}</button></form><button className="auth-switch" onClick={()=>{setAuthMode(authMode==="signup"?"signin":"signup");setAuthError("");}}>{authMode==="signup"?"Already have an account? Sign in":"New to Stockwise? Create an account"}</button><small className="auth-foot">Your account data is protected by Supabase authentication and database access policies.</small></div></div>;
  return <Workspace session={session} onSignOut={()=>supabase?.auth.signOut()}/>;
