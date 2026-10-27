@@ -151,7 +151,7 @@ export default function App() {
     setAuthLoading(true);
     try {
       if (authMode === "signup") {
-        const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { display_name: fullName.trim() } } });
+        const { data, error: signUpError } = await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString(), data: { display_name: fullName.trim() } } });
         if (signUpError) throw signUpError;
         if (!data.session) {
           setAuthMessage("Check your email to confirm your account, then return here to sign in.");
