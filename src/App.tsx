@@ -110,8 +110,8 @@ export default function App() {
     (async () => {
       const [productResult, saleResult, returnResult] = await Promise.all([
         supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-        fetchAllRows((from, to) => supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
-        fetchAllRows((from, to) => supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
+        fetchAllRows((from, to) => supabase!.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
+        fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
       ]);
       if (cancelled) return;
       const queryError = productResult.error || saleResult.error || returnResult.error;
@@ -227,8 +227,8 @@ export default function App() {
     if (!supabase || !business) return;
     const [p, s, r] = await Promise.all([
       supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-      fetchAllRows((from, to) => supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
-      fetchAllRows((from, to) => supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
+      fetchAllRows((from, to) => supabase!.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
+      fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
     ]);
     if (p.error || s.error || r.error) setError(p.error?.message || s.error?.message || r.error?.message || "Unable to refresh data.");
     setProducts((p.data ?? []) as Product[]); setSales((s.data ?? []) as unknown as Sale[]); setReturns((r.data ?? []) as unknown as ReturnRecord[]);
