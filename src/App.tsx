@@ -77,6 +77,7 @@ export default function App() {
   });
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [authMode, setAuthMode] = useState<"signup" | "signin">("signup");
   const [authScreen, setAuthScreen] = useState<"auth" | "forgot" | "reset">(() => new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type") === "recovery" ? "reset" : "auth");
   const [resetPassword, setResetPassword] = useState("");
@@ -124,6 +125,13 @@ export default function App() {
   const [returnReason, setReturnReason] = useState("");
   const [reportPeriod, setReportPeriod] = useState<"daily" | "weekly" | "monthly" | "yearly">("monthly");
   const [reportDate, setReportDate] = useState(today());
+
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+    return () => { window.removeEventListener("online", updateOnlineStatus); window.removeEventListener("offline", updateOnlineStatus); };
+  }, []);
 
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
@@ -513,6 +521,7 @@ export default function App() {
 
   return (
     <div className="app-frame" data-theme={theme}>
+      {!isOnline && <div className="offline-banner" role="status"><strong>You’re offline.</strong> Kwacha Sales can open, but saving sales, products, returns, and receipts requires an internet connection. Reconnect before recording transactions.</div>}
       <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
         <a className="brand" href="#dashboard"><span className="brand-mark"><Store size={20} /></span><span>Kwacha Sales<span className="brand-period">.</span></span></a>
         <div className="business-switch"><span className="business-avatar">{business.name.slice(0,1).toUpperCase()}</span><span className="business-meta"><strong>{business.name}</strong><small>Business workspace</small></span><ChevronDown size={15} /></div>
