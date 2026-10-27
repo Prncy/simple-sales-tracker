@@ -478,7 +478,7 @@ export default function App() {
               <p>{passwordStrength.feedback.length ? passwordStrength.feedback.join(" · ") : "Good mix. Consider using a unique passphrase you don't use elsewhere."}</p>
             </div>}
           </label>
-          {authMode === "signin" && <button type="button" className="text-button forgot-link" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }}>Forgot password?</button>
+          {authMode === "signin" && <button type="button" className="text-button forgot-link" onClick={() => { setAuthScreen("forgot"); setAuthError(""); setAuthMessage(""); }}>Forgot password?</button>}
           {authMode === "signup" && <label>Confirm password<input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} autoComplete="new-password" minLength={8} placeholder="Enter the same password again" required aria-invalid={confirmPassword.length > 0 && confirmPassword !== password} aria-describedby="confirm-password-help" />
             <span className={confirmPassword.length === 0 ? "field-help" : confirmPassword === password ? "field-help match" : "field-help mismatch"} id="confirm-password-help">{confirmPassword.length === 0 ? "Re-enter your password to confirm it." : confirmPassword === password ? "Passwords match." : "Passwords do not match yet."}</span>
           </label>}
