@@ -398,3 +398,6 @@ td.numeric { color: var(--text); font-weight: 700; text-align: right; }
 .password-change-form .password-strength { margin: -3px 0 2px; }
 .password-change-form .button { align-self: flex-start; }
 @media (max-width: 520px) { .password-change-form { padding: 0 14px 16px; } }
+
+.offline-banner { position: sticky; top: 0; z-index: 80; padding: 11px 18px; border-bottom: 1px solid var(--orange); background: var(--orange-soft); color: var(--text); font-size: 12px; line-height: 1.5; }
+.offline-banner strong { margin-right: 5px; }
