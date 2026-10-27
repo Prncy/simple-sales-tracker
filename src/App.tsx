@@ -95,7 +95,18 @@ export default function App() {
 
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthLoading(false); });
+    const queryParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const callbackError = queryParams.get("error_description") || hashParams.get("error_description") || queryParams.get("error");
+    const isAuthCallback = hashParams.has("access_token") || queryParams.has("code") || queryParams.has("token_hash");
+    if (callbackError) setAuthError(callbackError.replace(/\+/g, " "));
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+      if (sessionError) setAuthError(sessionError.message);
+      if (data.session && isAuthCallback) setNotice("Email confirmed successfully. Your account is ready.");
+      if (isAuthCallback || callbackError) window.history.replaceState({}, document.title, window.location.pathname);
+    });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
     return () => subscription.unsubscribe();
   }, []);
