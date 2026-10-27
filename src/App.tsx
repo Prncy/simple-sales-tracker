@@ -4,26 +4,37 @@ import {
   Activity, ArrowDownLeft, ArrowRight, BarChart3, CalendarDays, Check,
   ChevronDown, CircleHelp, Download, LayoutDashboard, LogOut,
   Menu, Package, Plus, RotateCcw, Settings, ShieldCheck, ShoppingBag,
-  ShoppingCart, Store, Sun, Moon, Leaf, TrendingUp, X
+  ShoppingCart, Store, Sun, Moon, Leaf, TrendingUp, X, ReceiptText
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./lib/supabase";
 
 type Theme = "light" | "dark" | "graphite" | "green";
-type Page = "Overview" | "Sales" | "Products" | "Returns" | "Reports" | "Settings";
+type Page = "Overview" | "Sales" | "Products" | "Returns" | "Receipts" | "Reports" | "Settings";
 type Business = { id: string; name: string; currency_code: string; owner_user_id: string };
 type Product = { id: string; name: string; category: string; unit_label: string; default_unit_price: number; is_active: boolean };
-type Sale = { id: string; product_id: string; employee_name: string; quantity: number; unit_price: number; total_value: number; sold_on: string; sold_at: string; note?: string | null; products?: { name: string; unit_label: string } | null };
+type Sale = { id: string; transaction_id: string; product_id: string; employee_name: string; quantity: number; unit_price: number; total_value: number; sold_on: string; sold_at: string; note?: string | null; products?: { name: string; unit_label: string } | null };
+type ReceiptRecord = { id: string; transaction_id: string; receipt_number: string; total_amount: number; amount_received: number; change_due: number; created_at: string; business_id: string };
+type SaleGroup = { id: string; employee_name: string; sold_on: string; note?: string | null; total_value: number; quantity: number; items: Sale[] };
 type ReturnRecord = { id: string; product_id: string; employee_name: string; quantity: number; returned_on: string; reason?: string | null; products?: { name: string; unit_label: string } | null };
 
 const pages: { name: Page; icon: typeof LayoutDashboard }[] = [
   { name: "Overview", icon: LayoutDashboard }, { name: "Sales", icon: ShoppingCart },
   { name: "Products", icon: Package }, { name: "Returns", icon: RotateCcw },
-  { name: "Reports", icon: BarChart3 }, { name: "Settings", icon: Settings }
+  { name: "Receipts", icon: ReceiptText }, { name: "Reports", icon: BarChart3 }, { name: "Settings", icon: Settings }
 ];
 const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const today = () => dateKey(new Date());
 const money = (value: number, currency = "ZMW") => new Intl.NumberFormat("en-ZM", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0));
 const readableDate = (value: string) => value ? new Date(value + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
+const groupSales = (rows: Sale[]): SaleGroup[] => {
+  const groups = new Map<string, SaleGroup>();
+  rows.forEach(row => {
+    const id = row.transaction_id || row.id;
+    const group = groups.get(id) ?? { id, employee_name: row.employee_name, sold_on: row.sold_on, note: row.note, total_value: 0, quantity: 0, items: [] };
+    group.total_value += Number(row.total_value || 0); group.quantity += Number(row.quantity || 0); group.items.push(row); groups.set(id, group);
+  });
+  return Array.from(groups.values()).sort((a, b) => b.sold_on.localeCompare(a.sold_on));
+};
 
 async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
   const rows: T[] = [];
@@ -58,6 +69,12 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
+  const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
+  const [receiptEnabled, setReceiptEnabled] = useState(false);
+  const [amountReceived, setAmountReceived] = useState("");
+  const [saleItems, setSaleItems] = useState<{ key: number; product_id: string; quantity: string; unit_price: string }[]>([{ key: 1, product_id: "", quantity: "1", unit_price: "" }]);
+  const [nextSaleItemKey, setNextSaleItemKey] = useState(2);
+  const [savingSale, setSavingSale] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -108,17 +125,19 @@ export default function App() {
     let cancelled = false;
     setDataLoading(true);
     (async () => {
-      const [productResult, saleResult, returnResult] = await Promise.all([
+      const [productResult, saleResult, returnResult, receiptResult] = await Promise.all([
         supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-        fetchAllRows((from, to) => supabase!.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
-        fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
+        fetchAllRows((from, to) => supabase!.from("sales").select("id,transaction_id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
+        fetchAllRows((from, to) => supabase!.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to)),
+        supabase.from("receipts").select("id,transaction_id,business_id,receipt_number,total_amount,amount_received,change_due,created_at").eq("business_id", business.id).order("created_at", { ascending: false })
       ]);
       if (cancelled) return;
-      const queryError = productResult.error || saleResult.error || returnResult.error;
+      const queryError = productResult.error || saleResult.error || returnResult.error || receiptResult.error;
       if (queryError) setError(queryError.message);
       setProducts((productResult.data ?? []) as Product[]);
       setSales((saleResult.data ?? []) as unknown as Sale[]);
       setReturns((returnResult.data ?? []) as unknown as ReturnRecord[]);
+      setReceipts((receiptResult.data ?? []) as ReceiptRecord[]);
       setDataLoading(false);
     })();
     return () => { cancelled = true; };
@@ -128,6 +147,7 @@ export default function App() {
     localStorage.setItem("stockwise-theme", theme);
   }, [theme]);
 
+  const groupedSales = useMemo(() => groupSales(sales), [sales]);
   const currentMonthSales = useMemo(() => sales.filter(s => s.sold_on?.slice(0, 7) === today().slice(0, 7)), [sales]);
   const currentMonthValue = currentMonthSales.reduce((sum, sale) => sum + Number(sale.total_value || 0), 0);
   const currentMonthUnits = currentMonthSales.reduce((sum, sale) => sum + Number(sale.quantity || 0), 0);
@@ -238,7 +258,7 @@ export default function App() {
     if (!supabase) return;
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) setError(signOutError.message);
-    else { setBusiness(null); setProducts([]); setSales([]); setReturns([]); setPage("Overview"); }
+    else { setBusiness(null); setProducts([]); setSales([]); setReturns([]); setReceipts([]); setPage("Overview"); }
   }
 
   function downloadReport() {
@@ -296,7 +316,7 @@ export default function App() {
           {notice && <div className="alert success" role="status"><Check size={16} /> {notice}<button onClick={() => setNotice("")} aria-label="Dismiss"><X size={15}/></button></div>}
           {error && <div className="alert error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss"><X size={15}/></button></div>}
           {dataLoading && <div className="loading-strip">Syncing your saved records…</div>}
-          {page === "Overview" && <><div className="welcome-row"><div><p className="eyebrow">YOUR BUSINESS AT A GLANCE</p><h2>Here's how things are moving.</h2><p className="muted">Your numbers, based on the sales you've recorded.</p></div><button className="button primary" onClick={() => { setPage("Sales"); setSaleProduct(products[0]?.id ?? ""); }}><Plus size={17} /> Record a sale</button></div><div className="metric-grid"><Metric icon={TrendingUp} label="Sales this month" value={money(currentMonthValue,business.currency_code)} hint="Recorded sales value" tone="accent" /><Metric icon={ShoppingBag} label="Units sold this month" value={currentMonthUnits.toLocaleString()} hint="Total quantity recorded" tone="blue" /><Metric icon={Package} label="Active products" value={products.length.toString()} hint="In your product catalogue" tone="green" /><Metric icon={ArrowDownLeft} label="Returns recorded" value={returns.length.toString()} hint="All-time return entries" tone="orange" /></div><div className="dashboard-grid"><section className="panel recent-panel"><div className="panel-heading"><div><h3>Recent sales</h3><p>Latest transactions saved to your workspace</p></div><button className="text-button" onClick={() => setPage("Sales")}>View all <ArrowRight size={15}/></button></div>{sales.length ? <div className="table-wrap"><table><thead><tr><th>Product</th><th>Date</th><th>Quantity</th><th>Total</th></tr></thead><tbody>{sales.slice(0,5).map(s => <tr key={s.id}><td><strong>{s.products?.name ?? products.find(p => p.id === s.product_id)?.name ?? "Product"}</strong><small>{s.employee_name}</small></td><td>{readableDate(s.sold_on)}</td><td>{s.quantity} {s.products?.unit_label ?? ""}</td><td className="numeric">{money(Number(s.total_value),business.currency_code)}</td></tr>)}</tbody></table></div> : <EmptyState icon={ShoppingCart} title="Your first sale starts here" description="Once you record a sale, it will appear here." action="Record a sale" onAction={() => setPage("Sales")} />}</section><section className="panel quick-panel"><div className="panel-heading"><div><h3>Quick actions</h3><p>Get straight to what you need</p></div></div><QuickAction icon={ShoppingCart} title="Record a sale" detail="Add a completed transaction" onClick={() => setPage("Sales")} /><QuickAction icon={Package} title="Add a product" detail="Set up a product and its price" onClick={() => setPage("Products")} /><QuickAction icon={RotateCcw} title="Record a return" detail="Keep returned goods documented" onClick={() => setPage("Returns")} /><QuickAction icon={BarChart3} title="View reports" detail="Summarise sales over time" onClick={() => setPage("Reports")} /></section></div></>}
+          {page === "Overview" && <><div className="welcome-row"><div><p className="eyebrow">YOUR BUSINESS AT A GLANCE</p><h2>Here's how things are moving.</h2><p className="muted">Your numbers, based on the sales you've recorded.</p></div><button className="button primary" onClick={() => { setPage("Sales"); setSaleProduct(products[0]?.id ?? ""); }}><Plus size={17} /> Record a sale</button></div><div className="metric-grid"><Metric icon={TrendingUp} label="Sales this month" value={money(currentMonthValue,business.currency_code)} hint="Recorded sales value" tone="accent" /><Metric icon={ShoppingBag} label="Units sold this month" value={currentMonthUnits.toLocaleString()} hint="Total quantity recorded" tone="blue" /><Metric icon={Package} label="Active products" value={products.length.toString()} hint="In your product catalogue" tone="green" /><Metric icon={ArrowDownLeft} label="Returns recorded" value={returns.length.toString()} hint="All-time return entries" tone="orange" /></div><div className="dashboard-grid"><section className="panel recent-panel"><div className="panel-heading"><div><h3>Recent sales</h3><p>Latest transactions saved to your workspace</p></div><button className="text-button" onClick={() => setPage("Sales")}>View all <ArrowRight size={15}/></button></div>{sales.length ? <div className="table-wrap"><table><thead><tr><th>Product</th><th>Date</th><th>Quantity</th><th>Total</th></tr></thead><tbody>{groupedSales.slice(0,5).map(s => <tr key={s.id}><td><strong>{s.items.map(item => item.products?.name ?? products.find(p => p.id === item.product_id)?.name ?? "Product").join(", ")}</strong><small>{s.employee_name}</small></td><td>{readableDate(s.sold_on)}</td><td>{s.quantity}</td><td className="numeric">{money(s.total_value,business.currency_code)}</td></tr>)}</tbody></table></div> : <EmptyState icon={ShoppingCart} title="Your first sale starts here" description="Once you record a sale, it will appear here." action="Record a sale" onAction={() => setPage("Sales")} />}</section><section className="panel quick-panel"><div className="panel-heading"><div><h3>Quick actions</h3><p>Get straight to what you need</p></div></div><QuickAction icon={ShoppingCart} title="Record a sale" detail="Add a completed transaction" onClick={() => setPage("Sales")} /><QuickAction icon={Package} title="Add a product" detail="Set up a product and its price" onClick={() => setPage("Products")} /><QuickAction icon={RotateCcw} title="Record a return" detail="Keep returned goods documented" onClick={() => setPage("Returns")} /><QuickAction icon={BarChart3} title="View reports" detail="Summarise sales over time" onClick={() => setPage("Reports")} /></section></div></>}
           {page === "Products" && <><div className="section-intro"><div><p className="eyebrow">PRODUCT CATALOGUE</p><h2>Products your business sells</h2><p className="muted">Add the products you sell. You don't need to enter stock quantities.</p></div></div><div className="split-layout"><section className="panel"><div className="panel-heading"><div><h3>Add a product</h3><p>Prices can be changed without altering old sales.</p></div></div><form className="form-stack" onSubmit={addProduct}><label>Product name<input value={productName} onChange={e => setProductName(e.target.value)} placeholder="e.g. 2L cooking oil" maxLength={160} required /></label><div className="form-two"><label>Category<input value={category} onChange={e => setCategory(e.target.value)} placeholder="General" /></label><label>Unit label<input value={unitLabel} onChange={e => setUnitLabel(e.target.value)} placeholder="bottle, kg, item…" /></label></div><label>Default selling price ({business.currency_code})<input type="number" min="0" step="0.01" value={productPrice} onChange={e => setProductPrice(e.target.value)} placeholder="0.00" required /></label><button className="button primary" type="submit"><Plus size={16}/> Save product</button></form></section><section className="panel"><div className="panel-heading"><div><h3>Product list</h3><p>{products.length} active {products.length === 1 ? "product" : "products"}</p></div></div>{products.length ? <div className="product-list">{products.map(p => <div className="product-row" key={p.id}><span className="product-icon"><Package size={18}/></span><div className="product-meta"><strong>{p.name}</strong><small>{p.category} · per {p.unit_label}</small></div><strong className="product-price">{money(Number(p.default_unit_price),business.currency_code)}</strong></div>)}</div> : <EmptyState icon={Package} title="No products yet" description="Add your first product using the form." />}</section></div></>}
           {page === "Sales" && <><div className="section-intro"><div><p className="eyebrow">TRANSACTION LOG</p><h2>Record and review sales</h2><p className="muted">Each sale keeps the actual price used at the time.</p></div></div><div className="split-layout"><section className="panel"><div className="panel-heading"><div><h3>Record a sale</h3><p>Enter the details of a completed sale.</p></div></div>{products.length ? <form className="form-stack" onSubmit={addSale}><label>Product<select value={saleProduct} onChange={e => { setSaleProduct(e.target.value); const p = products.find(item => item.id === e.target.value); if (p) setSalePrice(String(p.default_unit_price)); }} required><option value="">Choose a product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name} — {money(Number(p.default_unit_price),business.currency_code)}</option>)}</select></label><div className="form-two"><label>Quantity<input type="number" min="0.001" step="0.001" value={saleQuantity} onChange={e => setSaleQuantity(e.target.value)} required /></label><label>Unit price ({business.currency_code})<input type="number" min="0" step="0.01" value={salePrice} onChange={e => setSalePrice(e.target.value)} required /></label></div><div className="sale-total"><span>Sale total</span><strong>{money(Number(saleQuantity || 0) * Number(salePrice || 0),business.currency_code)}</strong></div><label>Sale date<input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} required /></label><label>Employee name<input value={employeeName} onChange={e => setEmployeeName(e.target.value)} maxLength={120} required /></label><label>Note <span className="optional">(optional)</span><textarea value={saleNote} onChange={e => setSaleNote(e.target.value)} rows={2} placeholder="Any useful details…" /></label><button className="button primary" type="submit"><Plus size={16}/> Save sale</button></form> : <EmptyState icon={Package} title="Add a product first" description="Create at least one product before recording a sale." action="Go to products" onAction={() => setPage("Products")} />}</section><section className="panel"><div className="panel-heading"><div><h3>Sales history</h3><p>{sales.length} recorded transactions</p></div></div>{sales.length ? <div className="table-wrap"><table><thead><tr><th>Product / employee</th><th>Date</th><th>Qty</th><th>Total</th></tr></thead><tbody>{sales.map(s => <tr key={s.id}><td><strong>{s.products?.name ?? products.find(p => p.id === s.product_id)?.name ?? "Product"}</strong><small>{s.employee_name}</small></td><td>{readableDate(s.sold_on)}</td><td>{s.quantity}</td><td className="numeric">{money(Number(s.total_value),business.currency_code)}</td></tr>)}</tbody></table></div> : <EmptyState icon={ShoppingCart} title="No sales recorded" description="Saved transactions will show here." />}</section></div></>}
           {page === "Returns" && <><div className="section-intro"><div><p className="eyebrow">RETURNS LOG</p><h2>Keep returns transparent</h2><p className="muted">Returns are recorded separately and do not silently reduce sales totals.</p></div></div><div className="split-layout"><section className="panel"><div className="panel-heading"><div><h3>Record a return</h3><p>Document returned goods.</p></div></div>{products.length ? <form className="form-stack" onSubmit={addReturn}><label>Product<select value={returnProduct} onChange={e => setReturnProduct(e.target.value)} required><option value="">Choose a product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="form-two"><label>Quantity returned<input type="number" min="0.001" step="0.001" value={returnQuantity} onChange={e => setReturnQuantity(e.target.value)} required /></label><label>Return date<input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} required /></label></div><label>Recorded by<input value={employeeName} onChange={e => setEmployeeName(e.target.value)} required /></label><label>Reason <span className="optional">(optional)</span><textarea rows={2} value={returnReason} onChange={e => setReturnReason(e.target.value)} placeholder="e.g. Damaged packaging" /></label><button className="button primary"><Plus size={16}/> Save return</button></form> : <EmptyState icon={Package} title="Add a product first" description="Returns are linked to products in your catalogue." action="Go to products" onAction={() => setPage("Products")} />}</section><section className="panel"><div className="panel-heading"><div><h3>Returns history</h3><p>{returns.length} return entries</p></div></div>{returns.length ? <div className="table-wrap"><table><thead><tr><th>Product</th><th>Date</th><th>Quantity</th><th>Reason</th></tr></thead><tbody>{returns.map(r => <tr key={r.id}><td><strong>{r.products?.name ?? "Product"}</strong><small>{r.employee_name}</small></td><td>{readableDate(r.returned_on)}</td><td>{r.quantity}</td><td>{r.reason || "—"}</td></tr>)}</tbody></table></div> : <EmptyState icon={RotateCcw} title="No returns recorded" description="Any returns you record will appear here." />}</section></div></>}
