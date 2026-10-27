@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import {
   Activity, ArrowDownLeft, ArrowRight, BarChart3, CalendarDays, Check,
-  ChevronDown, CircleHelp, ClipboardList, Download, LayoutDashboard, LogOut,
+  ChevronDown, CircleHelp, Download, LayoutDashboard, LogOut,
   Menu, Package, Plus, RotateCcw, Settings, ShieldCheck, ShoppingBag,
   ShoppingCart, Store, Sun, Moon, Leaf, TrendingUp, X
 } from "lucide-react";
