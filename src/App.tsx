@@ -25,6 +25,19 @@ const today = () => dateKey(new Date());
 const money = (value: number, currency = "ZMW") => new Intl.NumberFormat("en-ZM", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0));
 const readableDate = (value: string) => value ? new Date(value + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—";
 
+async function fetchAllRows<T>(fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
+  const rows: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await fetchPage(from, from + 999);
+    if (error) return { data: rows, error };
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < 1000) return { data: rows, error: null };
+    from += 1000;
+  }
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("stockwise-theme");
@@ -97,8 +110,8 @@ export default function App() {
     (async () => {
       const [productResult, saleResult, returnResult] = await Promise.all([
         supabase.from("products").select("id,name,category,unit_label,default_unit_price,is_active").eq("business_id", business.id).eq("is_active", true).order("name"),
-        supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).limit(1000),
-        supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).limit(1000)
+        fetchAllRows((from, to) => supabase.from("sales").select("id,product_id,employee_name,quantity,unit_price,total_value,sold_on,sold_at,note,products!sales_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("sold_on", { ascending: false }).range(from, to)),
+        fetchAllRows((from, to) => supabase.from("returns").select("id,product_id,employee_name,quantity,returned_on,reason,products!returns_product_id_fkey(name,unit_label)").eq("business_id", business.id).order("returned_on", { ascending: false }).range(from, to))
       ]);
       if (cancelled) return;
       const queryError = productResult.error || saleResult.error || returnResult.error;
